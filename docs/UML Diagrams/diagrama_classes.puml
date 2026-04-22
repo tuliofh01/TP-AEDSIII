@@ -1,0 +1,90 @@
+@startuml diagrama_classes
+' Diagrama de Classes UML - Nova Arquitetura com namespaces
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 14
+skinparam classAttributeFontSize 13
+
+title Diagrama de Classes - TP AEDS III
+
+namespace tpaeds {
+
+    class FileManager {
+        - fileStream_ : fstream
+        - filePath_ : string
+        - recordCount_ : size_t
+        + initialize(path) : bool
+        + readRecord(index) : optional<byte[]>
+        + appendRecord(data) : bool
+        + countActive() : uint32_t
+        + countTotal() : uint32_t
+        + markDeleted(index) : bool
+        + isDeleted(index) : bool
+        - calcOffset(index) : size_t
+        - readAt(buf, off) : bool
+        - writeAt(data, off) : bool
+        - updateCount() : void
+    }
+
+    class StudentRecord {
+        + status : char
+        + id : int32_t
+        + userId : int32_t
+        + name : char[50]
+        + birthDate : uint32_t
+        + isActive() : bool
+        + setActive() : void
+        + setDeleted() : void
+        + toBytes() : vector<byte>
+        + fromBytes(data) : StudentRecord
+        + nameStr() : string
+    }
+
+    class IndexCtrl {
+        - map_ : unordered_map<string, size_t>
+        - idxPath_ : string
+        - depth_ : uint32_t
+        - rebuildIgnored_ : bool
+        + initialize(idxPath) : bool
+        + insert(name, id, offset) : bool
+        + lookup(name) : optional<size_t>
+        + remove(name) : bool
+        + shouldRebuild(cnt) : bool
+        + rebuild() : void
+        + ignoreRebuild() : void
+        + save() : bool
+        + load() : bool
+        - djb2(name) : uint32
+        - normalize(name) : string
+    }
+
+    class DataManager {
+        - fileMgr_ : FileManager
+        - indexCtrl_ : IndexCtrl
+        - dataPath_ : string
+        - lastError_ : string
+        - rebuildIgnored_ : bool
+        + initialize(dataPath) : bool
+        + createStudent(name, uid, bday) : bool
+        + readStudent(id) : optional<StudentRecord>
+        + searchByName(name) : optional<StudentRecord>
+        + deleteStudent(id) : bool
+        + listAll() : vector<StudentRecord>
+        + getLastError() : string
+        + needsRebuild() : bool
+        + triggerRebuild() : void
+        + ignoreRebuildForSession() : void
+        + getNextDisplayId() : int32_t
+        + getActiveCount() : uint32_t
+        - rebuildIndex() : void
+        - scanActive() : vector<pair<size_t, StudentRecord>>
+    }
+
+    FileManager *-- StudentRecord : contem
+    DataManager o-- FileManager : usa
+    DataManager o-- IndexCtrl : usa
+    DataManager --> StudentRecord : retorna
+
+}
+
+@enduml

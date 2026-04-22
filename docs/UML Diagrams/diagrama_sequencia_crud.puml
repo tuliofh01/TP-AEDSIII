@@ -1,0 +1,79 @@
+@startuml diagrama_sequencia_crud
+' Diagrama de Sequencia - Operacao CRUD completa
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 13
+
+title Diagrama de Sequencia - Cadastrar e Listar Estudantes
+
+actor Usuario as U
+participant "router.lua" as R
+participant "StudentCreate.lua" as SC
+participant "StudentList.lua" as SL
+participant "DataManager" as DM
+participant "FileManager" as FM
+participant "IndexCtrl" as IX
+database "students.dat" as DAT
+database "students.idx" as IDX
+
+== Cadastro de Estudante ==
+
+U -> R : seleciona "Cadastrar"
+R -> SC : render()
+SC -> U : exibe formulario (nome, data)
+U -> SC : preenche e clica "Cadastrar"
+SC -> DM : createStudent(name, userId, birthDate)
+DM -> FM : countActive()
+FM -> DAT : varre registros ativos
+FM --> DM : retorna N
+DM -> DM : id = N + 1
+DM -> FM : appendRecord(bytes)
+FM -> DAT : grava 67 bytes no final
+FM --> DM : sucesso
+DM -> IX : insert(name, id, offset)
+IX -> IX : normalize(name)
+IX -> IX : map[normalized] = offset
+IX --> DM : sucesso
+DM --> SC : true
+SC -> U : mensagem de sucesso
+
+== Listagem de Estudantes ==
+
+U -> R : seleciona "Listar"
+R -> SL : render()
+SL -> DM : listAll()
+DM -> FM : countTotal()
+FM --> DM : total
+loop para cada registro
+    DM -> FM : isDeleted(i)
+    alt registro ativo
+        DM -> FM : readRecord(i)
+        FM -> DAT : le 67 bytes
+        FM --> DM : buffer
+        DM -> DM : StudentRecord::fromBytes()
+    else registro deletado
+        DM -> DM : ignora
+    end
+end
+DM -> DM : recalcula IDs dinamicos
+DM --> SL : vector<StudentRecord>
+SL -> U : exibe lista vertical
+
+== Soft Delete ==
+
+U -> SL : clica "X" em estudante
+SL -> DM : deleteStudent(id)
+DM -> FM : scanActive()
+FM --> DM : registros ativos
+loop encontra registro com ID
+    DM -> FM : markDeleted(offset)
+    FM -> DAT : sobrescreve byte status com '*'
+    FM --> DM : sucesso
+    DM -> IX : remove(name)
+    IX -> IX : map.erase(normalized)
+    IX --> DM : sucesso
+end
+DM --> SL : true
+SL -> U : estudante removido da lista
+
+@enduml

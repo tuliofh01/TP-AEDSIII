@@ -1,88 +1,128 @@
-#include <iostream>
-#include <string>
-#include <memory>
-#include "dao/StudentDAO.h"
-#include "models/Student.h"
-
 /**
  * @file main.cpp
- * @brief Ponto de entrada do sistema de matrícula acadêmica.
- * 
- * Demonstra o uso de CRUD básico para a entidade Estudante.
+ * @brief Ponto de entrada do sistema AEDS III.
+ * @brief GUI com hello_imgui + Lua (minimalista 4 cores).
  */
+#include <iostream>
+#include <filesystem>
+#include <cstdint>
+#include <optional>
+#include "lua.hpp"
+#include "luaaa.hpp"
+#include "hello_imgui/hello_imgui.h"
+#include "controller/DataManager.hpp"
+#include "model/Record.hpp"
 
-using namespace std;
+namespace project_view { extern lua_State* lState; }
 
-// Exibe o menu principal formatado
-void menu() {
-    cout << "\n--- SISTEMA DE MATRÍCULA ---" << endl;
-    cout << "1. Cadastrar Estudante" << endl;
-    cout << "2. Listar Todos" << endl;
-    cout << "3. Buscar por ID" << endl;
-    cout << "4. Atualizar Estudante (Não Implementado)" << endl;
-    cout << "5. Excluir Estudante" << endl;
-    cout << "0. Sair" << endl;
-    cout << "Escolha: ";
+namespace luaaa {
+	template<>
+	struct LuaStack<project_model::StudentRecord> {
+		static void put(lua_State* L, const project_model::StudentRecord& rec) {
+			lua_newtable(L);
+			lua_pushstring(L, "id");
+			lua_pushinteger(L, static_cast<lua_Integer>(rec.id));
+			lua_settable(L, -3);
+			lua_pushstring(L, "userId");
+			lua_pushinteger(L, static_cast<lua_Integer>(rec.userId));
+			lua_settable(L, -3);
+			lua_pushstring(L, "name");
+			lua_pushstring(L, rec.nameStr().c_str());
+			lua_settable(L, -3);
+			lua_pushstring(L, "birthDate");
+			lua_pushinteger(L, static_cast<lua_Integer>(rec.birthDate));
+			lua_settable(L, -3);
+			lua_pushstring(L, "status");
+			lua_pushinteger(L, static_cast<lua_Integer>(rec.status));
+			lua_settable(L, -3);
+		}
+	};
+
+	template<>
+	struct LuaStack<std::optional<project_model::StudentRecord>> {
+		static void put(lua_State* L, const std::optional<project_model::StudentRecord>& opt) {
+			if (!opt.has_value()) {
+				lua_pushnil(L);
+				return;
+			}
+			LuaStack<project_model::StudentRecord>::put(L, opt.value());
+		}
+	};
 }
 
-int main() {
-    StudentDAO dao;
-    int option, id;
+extern "C" void LoadImguiBindings();
 
-    do {
-        menu();
-        if (!(cin >> option)) break; // Proteção contra entrada inválida
-        cin.ignore();
+int main(int argc, char** argv) {
+	(void)argc; (void)argv;
 
-        switch (option) {
-            case 1: { // Cadastrar Estudante
-                Student s;
-                cout << "Nome: ";
-                cin.getline(s.name, 50);
-                // Data como inteiro DDMMYYYY para economia de espaço
-                cout << "Data Nascimento (DDMMYYYY): ";
-                cin >> s.birth_date;
-                
-                if (dao.create(s)) {
-                    cout << "Sucesso! ID do novo estudante: " << s._id << endl;
-                }
-                break;
-            }
-            case 2: { // Listar Todos
-                dao.listAll();
-                break;
-            }
-            case 3: { // Buscar por ID
-                cout << "Digite o ID: ";
-                cin >> id;
-                // Uso de auto e unique_ptr para gerenciamento seguro de memória
-                auto studentPtr = dao.read(id);
-                if (studentPtr) {
-                    cout << "Encontrado: " << studentPtr->name 
-                         << " | Data: " << studentPtr->birth_date << endl;
-                } else {
-                    cout << "Estudante nao encontrado ou removido." << endl;
-                }
-                break;
-            }
-            case 4: {
-                cout << "Funcionalidade ainda não implementada." << endl;
-                break;
-            }
-            case 5: { // Excluir Estudante (Lógico)
-                cout << "ID para excluir: ";
-                cin >> id;
-                // Uso de auto para dedução do tipo bool
-                auto success = dao.remove(id);
-                if (success) {
-                    cout << "Estudante excluido logicamente com sucesso." << endl;
-                } else {
-                    cout << "Erro ao excluir: ID inexistente." << endl;
-                }
-                break;
-            }
-        }
-    } while (option != 0);
+	// Cria estado Lua e carrega bibliotecas padrao
+	lua_State* L = luaL_newstate();
+	luaL_openlibs(L);
 
-    return 0;
+	// Expoe estado global para bindings de ImGui
+	project_view::lState = L;
+	LoadImguiBindings();
+
+	// Bind DataManager para Lua via luaaa
+	using DM = project_controller::DataManager;
+	project_controller::DataManager mgr;
+
+	luaaa::LuaClass<DM> luaDM(L, "DataManager");
+	luaDM.ctor();
+	luaDM.fun("initialize", &DM::initialize);
+	luaDM.fun("createStudent", &DM::createStudent);
+	luaDM.fun("readStudent", &DM::readStudent);
+	luaDM.fun("searchByName", &DM::searchByName);
+	luaDM.fun("deleteStudent", &DM::deleteStudent);
+	luaDM.fun("listAll", &DM::listAll);
+	luaDM.fun("getLastError", &DM::getLastError);
+	luaDM.fun("needsRebuild", &DM::needsRebuild);
+	luaDM.fun("triggerRebuild", &DM::triggerRebuild);
+	luaDM.fun("ignoreRebuildForSession", &DM::ignoreRebuildForSession);
+	luaDM.fun("getNextDisplayId", &DM::getNextDisplayId);
+	luaDM.fun("getActiveCount", &DM::getActiveCount);
+
+	// Modulo global para acessar o manager
+	luaaa::LuaModule(L).fun("getDataManager", [&]() -> DM* { return &mgr; });
+
+	// Configura path Lua para encontrar views
+	lua_getglobal(L, "package");
+	lua_getfield(L, -1, "path");
+	std::string curPath = lua_tostring(L, -1);
+	lua_pop(L, 1);
+	lua_pushstring(L, (curPath + ";./src/views/?.lua;./src/views/?/init.lua").c_str());
+	lua_setfield(L, -2, "path");
+	lua_pop(L, 1);
+
+	// Carrega router.lua
+	if (luaL_dofile(L, "./src/views/router.lua") != LUA_OK) {
+		std::cerr << "Lua Erro: " << lua_tostring(L, -1) << std::endl;
+		lua_close(L);
+		return -1;
+	}
+
+	// Inicializa arquivos de dados
+	auto exeDir = std::filesystem::current_path();
+	auto dataPath = (exeDir / "data" / "students.dat").string();
+	std::filesystem::create_directories(exeDir / "data");
+	(void)mgr.initialize(dataPath);
+
+	// Configura e roda HelloImGui
+	HelloImGui::RunnerParams runnerParams;
+	runnerParams.appWindowParams.windowTitle = "AEDS III - Sistema de Matricula";
+	runnerParams.appWindowParams.windowGeometry.size = { 800, 600 };
+
+	// Tema minimalista 4 cores
+	auto& theme = runnerParams.imGuiWindowParams;
+	runnerParams.callbacks.ShowGui = [&]() {
+		lua_getglobal(L, "RenderUI");
+		if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
+			std::cerr << "Lua Render Erro: " << lua_tostring(L, -1) << std::endl;
+			lua_pop(L, 1);
+		}
+	};
+
+	HelloImGui::Run(runnerParams);
+	lua_close(L);
+	return 0;
 }

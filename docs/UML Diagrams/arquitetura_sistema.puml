@@ -1,0 +1,78 @@
+@startuml arquitetura_sistema
+' Diagrama de Arquitetura do Sistema - GUI com Lua DSL (MVC Flat)
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 14
+
+title Arquitetura do Sistema - TP AEDS III\n(Namespace Flat: project_utility, project_model, project_controller, project_view)
+
+package "Camada GUI (C++ / HelloImGui)" {
+    [main.cpp\n(Entry Point)] as main
+    [HelloImGui\nRunnerParams] as hello
+    [ImguiBindings.cpp\n(project_view)] as bindings
+}
+
+package "Camada Lua DSL (Views)" {
+    [router.lua\n(Navegacao)] as router
+    [common.lua\n(4-cores theme)] as common
+    [MainMenu.lua] as menu
+    [StudentCreate.lua] as create
+    [StudentList.lua] as list
+    [StudentDetail.lua] as detail
+}
+
+package "project_utility (Constantes/Enums)" {
+    [Constants.hpp\n(NAME_LEN, etc)] as const
+    [Enums.hpp\n(RecStatus, ViewId)] as enums
+}
+
+package "project_model (Dados)" {
+    [Record.hpp\n(StudentRecord)] as model
+    [RecordSerializer] as serializer
+}
+
+package "project_controller (Negocio)" {
+    [DataManager\n(CRUD Controller)] as dm
+    [FileManager\n(I/O Binario)] as fm
+    [IndexCtrl\n(Hash Index)] as idx
+}
+
+database "students.dat\n(67 bytes/registro)" as dat
+database "students.idx\n(indice hash)" as idxfile
+
+' Fluxo principal
+main --> hello : configura Runner
+main --> bindings : LoadImguiBindings()
+main --> dm : bind via luaaa
+hello --> router : RenderUI() callback
+bindings --> router : imgui.* functions
+dm --> bindings : exposto via LuaModule
+
+' Lua views
+router --> common : require()
+router --> menu : render()
+router --> create : render()
+router --> list : render()
+router --> detail : render()
+
+' CRUD
+menu --> dm : getDataManager()
+create --> dm : createStudent()
+list --> dm : listAll()\ndeleteStudent()
+detail --> dm : searchByName()
+
+' Dependencies
+dm --> fm : initialize()\nreadRecord()\nappendRecord()\nmarkDeleted()
+dm --> idx : insert()\nlookup()\nremove()\nrebuild()
+
+' Utility/Model dependencies
+fm --> model : StudentRecord\ntoBytes()/fromBytes()
+model --> const : NAME_LEN, OFFSET_*
+model --> enums : RecStatus (using enum)
+idx --> const : IDX_MAGIC, REBUILD_MODULO
+
+' Persistencia
+fm --> dat : leitura/escrita\nbinaria direta
+idx --> idxfile : save()/load()\nhash DJB2
+
+@enduml

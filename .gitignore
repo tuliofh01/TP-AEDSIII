@@ -1,0 +1,46 @@
+# CMake build directories
+cmake-build-*/
+build/
+builds/
+.deps_cache/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+build.ninja
+*.ninja
+compile_commands.json
+
+# C++ compiled
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# C++ precompiled
+*.pch
+*.gch
+
+# Test executables
+run_tests
+TP_AEDSIII
+
+# Data files (runtime generated)
+data/*.dat
+data/*.idx
+
+# Lua compiled
+luac.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

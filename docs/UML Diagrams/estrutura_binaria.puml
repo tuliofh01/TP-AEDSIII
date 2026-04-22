@@ -1,0 +1,55 @@
+@startuml estrutura_binaria
+' Diagrama da Estrutura Binaria do Registro de Estudante
+' Cada registro tem 67 bytes: 1 byte status + 66 bytes de dados
+
+skinparam backgroundColor #FFFFFF
+skinparam componentStyle uml2
+skinparam defaultFontSize 14
+skinparam defaultFontName Monospaced
+
+title Estrutura Binaria do Registro - StudentRecord (67 bytes)
+
+package "Registro de Estudante (67 bytes)" {
+    [status\n(1 byte)\n'A' ou '*'] as status
+    [id\n(4 bytes)\nint32_t] as id
+    [userId\n(4 bytes)\nint32_t] as userId
+    ["name\n(50 bytes)\nchar50"] as name
+    [birthDate\n(4 bytes)\nuint32_t] as birth
+    [padding\n(4 bytes)] as padding
+}
+
+status -[hidden]right-> id
+id -[hidden]right-> userId
+userId -[hidden]right-> name
+name -[hidden]right-> birth
+birth -[hidden]right-> padding
+
+note right of status
+  'A' = Ativo
+  '*' = Deletado
+  (soft delete)
+end note
+
+note right of id
+  ID dinamico
+  recalculado
+  ao listar
+end note
+
+note bottom of name
+  Nome de tamanho fixo
+  null-terminated
+  max 49 caracteres
+end note
+
+note bottom of birth
+  Formato DDMMAAAA
+  Ex: 15051990
+end note
+
+note bottom of padding
+  Alinhamento
+  para 67 bytes
+end note
+
+@enduml
