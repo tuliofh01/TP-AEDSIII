@@ -227,37 +227,71 @@ O projeto inclui **11 testes unitários** implementados em C++ nativo (sem frame
 
 #### Linux (Debian/Ubuntu)
 ```bash
+sudo apt update
 sudo apt install cmake ninja-build gcc g++ libglfw3-dev libfreetype6-dev ccache
 ```
 
 #### Linux (Arch Linux)
 ```bash
+sudo pacman -Syu
 sudo pacman -S cmake ninja gcc glfw-x11 mesa freetype2 ccache
 # Para Wayland: substituir glfw-x11 por glfw-wayland
 ```
 
-#### Windows (MSYS2)
-```bash
-pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-glfw mingw-w64-x86_64-freetype ccache
+#### Windows (PowerShell - MSYS2)
+```powershell
+# Abrir terminal MSYS2 ou Mingw64
+pacman -Syu
+
+# Instalar dependências
+pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-glfw mingw-w64-x86_64-freetype mingw-w64-x86_64-ccache
 ```
 
 #### macOS
 ```bash
+brew update
 brew install cmake ninja glfw freetype ccache
 ```
 
 ### 8.2 Compilação
 
+#### Comando Único (Recomendado)
 ```bash
-# Configuração com Ninja (recomendado - mais rápido)
-cmake -G Ninja -S . -B cmake-build-release_build -DCMAKE_BUILD_TYPE=Release
+# Navegar até o diretório do projeto
+cd /caminho/para/TP
 
-# Compilação
+# Limpar build anterior (opcional)
+rm -rf cmake-build-release_build
+
+# Configurar e compilar com Ninja
+cmake -G Ninja -S . -B cmake-build-release_build -DCMAKE_BUILD_TYPE=Release
 cmake --build cmake-build-release_build
 
-# OU com Makefiles (cross-platform padrão)
+# OU com Makefiles (sem Ninja)
 cmake -S . -B cmake-build-release_build
 cmake --build cmake-build-release_build
+```
+
+#### Passos Detalhados
+
+**Passo 1 - Configurar:**
+```bash
+cmake -G Ninja -S . -B cmake-build-release_build -DCMAKE_BUILD_TYPE=Release
+```
+
+**Passo 2 - Compilar:**
+```bash
+cmake --build cmake-build-release_build
+```
+
+**Passo 3 - Executar GUI:**
+```bash
+./builds/TP_AEDSIII
+```
+
+**Passo 4 - Executar Testes:**
+```bash
+./builds/run_tests
 ```
 
 ### 8.3 Execução
@@ -269,6 +303,15 @@ cmake --build cmake-build-release_build
 # Testes unitários (CLI)
 ./builds/run_tests
 ```
+
+### 8.4 Solução de Problemas
+
+| Erro | Solução |
+|------|---------|
+| `CMAKE_GENERATOR` not found | `rm -rf cmake-build-release_build` e reconfigurar |
+| hello_imgui lento (~15min) | Primeira build baixa dependências - Aguardar |
+| GLFW não encontrado | Verificar pacote glfw instalado |
+| Problema de linker | Limpar build: `rm -rf cmake-build-release_build` |
 
 ---
 
