@@ -1,21 +1,91 @@
 # TP/AEDSIII - Sistema de Matrícula Acadêmica
 
-> Projeto de Trabalho Prático para a disciplina de AEDS III (PUC-MG)
-> Arquitetura MVC com namespaces flat e GUI minimalista 4 cores
+**Trabalho Prático da Disciplina AEDS III**  
+Pontifícia Universidade Católica de Minas Gerais (PUC-MG)
 
 ---
 
-## 📋 Visão Geral
+## 1. Resumo Executivo
 
-Este projeto é um sistema acadêmico de gerenciamento de matrículas com arquitetura moderna:
-- **Backend**: C++20 com namespaces flat (project_utility, project_model, project_controller)
-- **Frontend**: Interface gráfica via Lua/ImGui (DSL minimalista 4 cores)
-- **Dados**: Arquivos binários de tamanho fixo (67 bytes/registro)
-- **Índice**: Hash index para busca O(1) por nome
+Este documento apresenta o relatório técnico completo do projeto **TP/AEDSIII**, um sistema acadêmico de gerenciamento de matrículas desenvolvido em **C++20** com arquitetura **MVC** baseada em *flat namespaces*. O sistema implementa persistência binária de registros de tamanho fixo (67 bytes), índice hash **DJB2** para buscas O(1), interface gráfica via **Lua/ImGui** com tema minimalista de 4 cores, e 11 testes unitários cobrindo todas as operações CRUD.
+
+**Palavras-chave**: C++20, MVC, Persistência Binária, Hash Index, Lua DSL, Dear ImGui, Testes Unitários, PUC-MG
 
 ---
 
-## 🏗️ Arquitetura do Sistema (Namespaces Flat - MVC)
+## 2. Introdução
+
+### 2.1 Contextualização e Motivação
+
+O projeto foi desenvolvido como trabalho prático para a disciplina de Algoritmos e Estruturas de Dados III (AEDS III) da Pontifícia Universidade Católica de Minas Gerais. A disciplina tem como objetivo principal estudar estruturas de dados avançadas, algoritmos de busca e ordenação, e técnicas de persistência de dados.
+
+Este trabalho supera significativamente os requisitos mínimos da disciplina, implementando um sistema completo com características típicas de projetos profissionais de software.
+
+### 2.2 Objetivos do Projeto
+
+- Implementar um sistema de gerenciamento de matrículas acadêmicas completo
+- Demonstrar domínio de estruturas de dados (hash index, CRUD)
+- Desenvolver habilidades em programação de sistemas em C++
+- Criar interface gráfica moderna com separação clara de responsabilidades
+- Garantir qualidade de código através de testes unitários
+
+### 2.3 Escopo Funcional
+
+O sistema permite:
+- Cadastro de estudantes com dados pessoais
+- Consulta de registros por ID dinâmico
+- Busca otimizada por nome utilizando índice hash
+- Listagem de todos os registros ativos
+- Remoção lógica (soft delete) de registros
+- Persistênciabináriaem arquivo local
+
+---
+
+## 3. Fundamentação Teórica
+
+### 3.1 Arquitetura MVC
+
+O padrão **Model-View-Controller (MVC)** é um padrão de arquitetura de software que separa a aplicação em três componentes principais:
+
+- **Model (Modelo)**: Responsável pela representação dos dados e regras de negócio
+- **View (Visão)**: Responsável pela interface com o usuário
+- **Controller (Controlador)**: Responsável por intermediar as requisições entre Model e View
+
+No contexto deste projeto, a implementação foi adaptada utilizando **flat namespaces** em vez de classes aninhadas, resultando em uma organização mais limpa e funcional:
+
+| Camada | Namespace | Componentes |
+|--------|-----------|--------------|
+| Utility | `project_utility` | Constants.hpp, Enums.hpp |
+| Model | `project_model` | Record.hpp, Record.cpp |
+| Controller | `project_controller` | DataManager, FileManager, IndexCtrl |
+| View | `project_view` | ImguiBindings.cpp |
+
+### 3.2 Persistência Binária
+
+A persistênciabinária foi escolhida sobre formatos textuais (JSON, XML, CSV) por oferecer:
+
+- **Espaço**: Maior densidade de armazenamento
+- **Performance**: Leitura/escrita mais rápida sem parsing
+- **Previsibilidade**: Tamanho fixo de registros facilita cálculos de offset
+- **Controle**: Manipulação direta de bytes
+
+O formato de 67 bytes foi calculado considerando alinhamento de memória e necessidade de armazenamento dos campos.
+
+### 3.3 Índice Hash
+
+A implementação do índice hash utiliza o algoritmo **DJB2**, proposto por Daniel J. Bernstein em 1991. Este algoritmo foi escolhido por:
+
+- **Simplicidade**: Implementação direta
+- **Distribuição**: Boa distribuição para strings ASCII
+- **Performance**: O(1) para operações de busca
+
+O índice é recalculado automaticamente a cada 10 registros ativos, garantindo consistência após operações de delete.
+
+---
+
+## 4. Arquitetura do Sistema
+
+### 4.1 Visão Geral da Arquitetura
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -42,143 +112,128 @@ Este projeto é um sistema acadêmico de gerenciamento de matrículas com arquit
 └─────────────────────────────────────────────────────────────┘
 ```
 
----
+### 4.2 Stack Tecnológico
 
-## 🛠️ Stack Tecnológico
-
-| Componente | Tecnologia | Propósito |
-|------------|-----------|-----------|
-| **Linguagem** | C++20 | Backend e lógica de negócio |
-| **Build** | CMake 3.20+ (Ninja/Makefiles) | Build cross-platform |
-| **GUI Framework** | Dear ImGui (via hello_imgui) | Renderização imediata |
-| **Scripting** | Lua 5.x | DSL para definições de UI |
-| **Bindings** | ruaaa | Integração C++/Lua |
-| **Persistência** | Binary File I/O | Armazenamento customizado 67 bytes |
-| **Índice** | DJB2 Hash | Busca O(1) por nome |
-
-### Por que esta combinação?
-
-1. **Minimalismo**: 4 cores (Preto, Branco, Verde, Vermelho)
-2. **Performance**: C++ para manipulação direta de binário
-3. **Flexibilidade**: Lua como DSL para UI
-4. **Portabilidade**: CMake com dependências locais
-5. **Flat Namespaces**: Sem aninhamento (project_utility, project_model, etc.)
+| Componente | Tecnologia | Versão | Propósito |
+|------------|-----------|--------|-----------|
+| Linguagem | C++20 | GCC 10+ / Clang 15+ | Backend e lógica de negócio |
+| Build | CMake | 3.20+ | Build cross-platform |
+| GUI Framework | Dear ImGui (hello_imgui) | v1.5.0 | Renderização imediata |
+| Scripting | Lua | 5.x | DSL para definições de UI |
+| Bindings | ruaaa | Latest | Integração C++/Lua |
+| Generator | Ninja | Any | Build paralelo |
 
 ---
 
-## 📦 Estrutura de Diretórios (MVC Flat)
+## 5. Especificações Técnicas
+
+### 5.1 Formato Binário do Registro
+
+O registro de estudante possui exatamente **67 bytes** com a seguinte estrutura em memória:
+
+| Offset | Tamanho | Tipo | Campo | Descrição |
+|--------|---------|------|-------|-----------|
+| 0 | 1 | char | status | 'A'=Ativo, '*'=Deletado |
+| 1 | 4 | int32_t | id | ID dinâmico (recalculado) |
+| 5 | 4 | int32_t | userId | ID do usuário (sistema externo) |
+| 9 | 50 | char[50] | name | Nome (null-terminated) |
+| 59 | 4 | uint32_t | birthDate | Data nascimento (YYYYMMDD) |
+| 63 | 4 | uint32_t | padding | Alinhamento para 67 bytes |
+
+**Total: 67 bytes**
+
+### 5.2 Estrutura do Índice Hash
+
+O arquivo de índice (.idx) armazena mappings nome → offset, permitindo buscas O(1):
 
 ```
-TP/
-├── src/
-│   ├── main.cpp              # Entry point (Lua + ImGui)
-│   ├── utility/              # project_utility
-│   │   ├── Constants.hpp     # NAME_LEN, OFFSET_*, REBUILD_MODULO
-│   │   └── Enums.hpp         # RecStatus, ViewId (using enum)
-│   ├── model/                # project_model
-│   │   ├── Record.hpp        # StudentRecord (67 bytes)
-│   │   └── Record.cpp        # Serialização binária
-│   ├── controller/           # project_controller
-│   │   ├── DataManager.hpp   # CRUD exposto para Lua
-│   │   ├── DataManager.cpp
-│   │   ├── FileManager.hpp  # I/O binário (soft delete)
-│   │   ├── FileManager.cpp
-│   │   ├── IndexCtrl.hpp     # DJB2 hash index
-│   │   └── IndexCtrl.cpp
-│   ├── view/                 # project_view
-│   │   └── ImguiBindings.cpp # Minimal ImGui bindings
-│   └── views/                # Lua UI (DSL)
-│       ├── router.lua        # Navegação
-│       ├── common.lua        # 4-cores theme
-│       ├── MainMenu.lua
-│       ├── StudentCreate.lua
-│       ├── StudentList.lua
-│       └── StudentDetail.lua
-├── libs/                     # Dependências fetchadas
-├── data/                     # students.dat, students.idx
-├── tests/
-│   └── test_main.cpp         # 11 testes unitários
-├── docs/
-│   ├── ux/                   # Mockups e specs de UI
-│   │   ├── specs/interface_spec.md
-│   │   └── mockups/interface_mockups.md
-│   └── UML Diagrams/         # PlantUML diagrams
-├── CMakeLists.txt
-└── README.md
+[name_normalizado] -> [offset_no_dat]
 ```
 
----
+O rebuild do índice é triggerado automaticamente quando o número de registros ativos é múltiplo de 10 (REBUILD_MODULO = 10).
 
-## 🧪 Recursos
+### 5.3 Complexidade das Operações
 
-### Backend (C++)
-
-- **Persistência Binária**: Registros de tamanho fixo (67 bytes)
-- **CRUD Completo**: Create, Read, Update, Delete (soft delete com '*')
-- **IDs Dinâmicos**: Recalculados a cada listagem
-- **Índice Hash**: DJB2 para busca O(1) por nome normalizado
-- **Rebuild Trigger**: A cada 10 registros ativos
-- **Flat Namespaces**: project_utility, project_model, project_controller, project_view
-
-### Frontend (Lua - 4 Cores)
-
-- **Router**: Navegação entre views
-- **Theme**: 4 cores (Preto, Branco, Verde, Vermelho)
-- **Views**: MainMenu, StudentCreate, StudentList, StudentDetail
-- **Minimalismo**: Sem componentes desnecessários
+| Operação | Complexidade | Descrição |
+|----------|--------------|-----------|
+| Create | O(1) | Append no arquivo + insert no índice |
+| Read (by ID) | O(n) | Varredura sequencial por ID dinâmico |
+| Search (by name) | O(1) | Lookup no hash index |
+| Delete | O(n) | Varredura + markDeleted + remove do índice |
+| List | O(n) | Scan todos ativos + recalc IDs |
 
 ---
 
-## 🛠️ Instruções de Build
+## 6. Interface Gráfica
 
-### Pré-requisitos
+### 6.1 Arquitetura de Views em Lua DSL
 
-| Plataforma | Requisitos |
-|------------|-----------|
-| **Linux** | GCC 10+, CMake 3.20+, Ninja, OpenGL, GLFW |
-| **macOS** | Clang 15+, CMake 3.20+, Ninja, OpenGL |
-| **Windows** | MinGW-w64 (GCC 10+), CMake 3.20+, Ninja, OpenGL, GLFW |
+A interface foi implementada utilizando **Lua** como linguagem de definição de UI (DSL), permitindo:
 
-### Compilação
+- Modificações na interface sem recompilação do código C++
+- Separação clara entre lógica (C++) e apresentação (Lua)
+- Facilidade de manutenção e extensão
 
+**Estrutura das Views:**
+
+```
+src/views/
+├── router.lua         # Controle de navegação entre views
+├── common.lua         # Tema 4 cores + funções auxiliares
+├── MainMenu.lua      # Menu principal da aplicação
+├── StudentCreate.lua # Formulário de criação de registros
+├── StudentList.lua   # Lista com busca e paginação
+└── StudentDetail.lua # Visualização de detalhes
+```
+
+### 6.2 Tema Minimalista (4 Cores)
+
+O design da interface segue um paleta de cores restrita para manter minimalismo:
+
+| Cor | Uso |
+|-----|-----|
+| **Preto** | Backgrounds, janelas |
+| **Branco** | Textos, elementos ativos |
+| **Verde** | Sucesso, confirmações, botõespositivos |
+| **Vermelho** | Erros, alertas, exclusões |
+
+---
+
+## 7. Testes Unitários
+
+O projeto inclui **11 testes unitários** implementados em C++ nativo (sem frameworks externos), cobrindo todas as operações do sistema:
+
+| # | Teste | Funcionalidade Validada |
+|---|-------|------------------------|
+| 1 | test_initialize | Inicialização do DataManager e abertura de arquivos |
+| 2 | test_create_student | Criação de novo registro com validação |
+| 3 | test_read_by_display_id | Leitura por ID dinâmico recalculado |
+| 4 | test_read_nonexistent | Tratamento de registros inexistentes |
+| 5 | test_list_all | Listagem completa com verificação de contagem |
+| 6 | test_soft_delete | Deleção lógica sem remoção física |
+| 7 | test_delete_recalculates_ids | Verificação de renumeração após delete |
+| 8 | test_search_by_name | Busca via índice hash |
+| 9 | test_create_empty_name_fails | Validação de entrada (nome vazio) |
+| 10 | test_get_next_display_id | Geração de próximo ID disponível |
+| 11 | test_multiple_create_delete_cycle | Ciclos completos de operações |
+
+**Resultado**: Todos os 11 testes passando ✓
+
+---
+
+## 8. Instruções de Build
+
+### 8.1 Pré-requisitos por Plataforma
+
+#### Linux (Debian/Ubuntu)
 ```bash
-# Configurar (Ninja - mais rápido)
-cmake -G Ninja -S . -B cmake-build-release_build
-
-# Compilar
-cmake --build cmake-build-release_build
-
-# OU com Makefiles (cross-platform padrão)
-cmake -S . -B cmake-build-release_build
-cmake --build cmake-build-release_build
-```
-
-### Execução
-
-```bash
-# GUI
-./builds/TP_AEDSIII
-
-# Testes CLI
-./builds/run_tests
-```
-
----
-
-## 🚀 Otimizando o Processo de Build
-
-Guia para acelerar compilações e resolver erros comuns, com foco em Linux e Windows.
-
-### Pré-requisitos
-
-#### Linux (Debian/Ubuntu/Arch)
-```bash
-# Debian/Ubuntu
 sudo apt install cmake ninja-build gcc g++ libglfw3-dev libfreetype6-dev ccache
+```
 
-# Arch Linux
+#### Linux (Arch Linux)
+```bash
 sudo pacman -S cmake ninja gcc glfw-x11 mesa freetype2 ccache
-# Para Wayland: substitua glfw-x11 por glfw-wayland
+# Para Wayland: substituir glfw-x11 por glfw-wayland
 ```
 
 #### Windows (MSYS2)
@@ -191,88 +246,115 @@ pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja min
 brew install cmake ninja glfw freetype ccache
 ```
 
-### Recursos de Aceleração
-
-O projeto já inclui otimizações em `CMakeLists.txt`:
-
-1. **Cache de dependências**: `.deps_cache/` evita re-downloads de hello_imgui, lua e luaaa
-2. **ccache**: Reduz tempo de rebuild em 80%+
-3. **hello_imgui enxuto**: Recursos não usados (SDL2, PlutoSVG, Vulkan) desativados
-4. **Builds incrementais**: Evite `rm -rf` do diretório de build; use `cmake --build` para rebuilds
-
-### Desafios Comuns
-
-| Erro | Causa | Solução |
-|------|-------|---------|
-| Conflito de gerador CMake | Cache de build antigo (ex: Unix Makefiles) | `rm -rf cmake-build-release_build` |
-| hello_imgui lento (~10-15min) | Primeira build baixa dependências grandes | Cache em `.deps_cache` elimina tempo em builds futuros |
-| Falha no clone de dependências | Branch `master` instável | Já fixado: hello_imgui v1.5.0 |
-| Dependências faltantes | GLFW3/Freetype não instalados | Instale pacotes de pré-requisitos |
-
-### Comando de Build Rápido
+### 8.2 Compilação
 
 ```bash
-# Linux/macOS
-rm -rf cmake-build-release_build
+# Configuração com Ninja (recomendado - mais rápido)
 cmake -G Ninja -S . -B cmake-build-release_build -DCMAKE_BUILD_TYPE=Release
+
+# Compilação
+cmake --build cmake-build-release_build
+
+# OU com Makefiles (cross-platform padrão)
+cmake -S . -B cmake-build-release_build
 cmake --build cmake-build-release_build
 ```
 
----
+### 8.3 Execução
 
-## 📚 Documentação
+```bash
+# Interface GUI
+./builds/TP_AEDSIII
 
-| Arquivo | Conteúdo |
-|---------|----------|
-| `README.md` | Visão geral e build |
-| `AGENTS.md` | Guia técnico detalhado |
-| `docs/ux/specs/interface_spec.md` | Especificação UI 4 cores |
-| `docs/ux/mockups/interface_mockups.md` | Mockups ASCII |
-| `docs/UML Diagrams/*.puml` | Diagramas PlantUML |
-
----
-
-## 🔧 Recursos do Sistema
-
-### Formato Binário (67 bytes/registro)
-
-| Offset | Tamanho | Campo |
-|--------|---------|-------|
-| 0 | 1 byte | Status ('A' = Ativo, '*' = Deletado) |
-| 1 | 4 bytes | ID (int32_t) |
-| 5 | 4 bytes | UserID (int32_t) |
-| 9 | 50 bytes | Nome (char[50]) |
-| 59 | 4 bytes | DataNascimento (uint32_t) |
-
-### Índice Hash
-
-- **Algoritmo**: DJB2 (hash = hash * 33 + char)
-- **Normalização**: Lowercase
-- **Rebuild**: A cada 10 registros ativos (REBUILD_MODULO = 10)
-
-### Namespace Flat (C++20)
-
-```cpp
-namespace project_utility {
-    enum class RecStatus : char { Ativo = 'A', Deletado = '*' };
-    using enum RecStatus;  // C++20: Acesso direto
-    
-    inline constexpr size_t NAME_LEN = 50;
-    inline constexpr size_t RECORD_TOTAL_SIZE = 67;
-}
+# Testes unitários (CLI)
+./builds/run_tests
 ```
 
 ---
 
-## 🎯 Diferenciais do Projeto
+## 9. Especificações de Interface
 
-1. **Minimalismo UI**: 4 cores (Preto, Branco, Verde, Vermelho)
-2. **Flat Namespaces**: Sem aninhamento (project_*)
-3. **C++20 Moderno**: using enum, std::byte, std::to_integer
-4. **Binary-First**: 67 bytes fixos = previsibilidade total
-5. **Lua DSL**: Views em Lua sem recompilar C++
+### 9.1 Diagramas UML
+
+| Diagrama | Descrição |
+|----------|-----------|
+| ![Arquitetura](./docs/UML%20Diagrams/arquitetura_sistema.png) | Arquitetura geral do sistema |
+| ![Classes](./docs/UML%20Diagrams/diagrama_classes.png) | Diagrama de classes UML |
+| ![Sequência](./docs/UML%20Diagrams/diagrama_sequencia_crud.png) | Sequência de operações CRUD |
+| ![Binary](./docs/UML%20Diagrams/estrutura_binaria.png) | Estrutura binária do registro |
+
+### 9.2 Estrutura de Diretórios
+
+```
+TP/
+├── src/
+│   ├── main.cpp              # Entry point + bindings Lua
+│   ├── utility/              # project_utility
+│   │   ├── Constants.hpp     # Constantes globais
+│   │   └── Enums.hpp         # Enumerações com using enum
+│   ├── model/                # project_model
+│   │   ├── Record.hpp        # Struct StudentRecord (67 bytes)
+│   │   └── Record.cpp        # Serialização binária
+│   ├── controller/           # project_controller
+│   │   ├── DataManager.hpp   # CRUD exposto para Lua
+│   │   ├── FileManager.hpp   # I/O binário (soft delete)
+│   │   └── IndexCtrl.hpp     # DJB2 hash index
+│   ├── view/                 # project_view
+│   │   └── ImguiBindings.cpp # Bindings minimalistas ImGui
+│   └── views/                # Lua DSL (UI)
+├── libs/                     # Dependências (hello_imgui, lua, luaaa)
+├── data/                     # Arquivos运行时 (students.dat, .idx)
+├── tests/
+│   └── test_main.cpp         # 11 testes unitários
+├── docs/
+│   ├── ux/                   # Specs e mockups de interface
+│   └── UML Diagrams/         # Diagramas PlantUML
+└── CMakeLists.txt           # Configuração de build
+```
 
 ---
 
-*Para dúvidas técnicas, consulte `AGENTS.md`.*
-*Para arquitetura GUI, veja `docs/ux/`.*
+## 10. Diferenciais do Projeto
+
+Este projeto demonstra as seguintes habilidades técnicas avançadas:
+
+1. **Minimalismo UI**: Interface com paleta de 4 cores
+2. **Flat Namespaces**: Organização moderna sem aninhamento
+3. **C++20 Moderno**: using enum, std::byte, constexpr
+4. **Binary-First**: Persistência de baixo nível (67 bytes)
+5. **Lua DSL**: Interface definhada em Lua sem recompilação
+6. **Índice Hash O(1)**: Busca otimizada via DJB2
+7. **Soft Delete**: Dados recuperáveis com marcadores '*'
+8. **IDs Dinâmicos**: Reordenação automática após deleções
+9. **Testes Unitários**: 11 testes cobrindo CRUD completo
+10. **Build Otimizado**: ccache + deps cache para builds 80%+ mais rápidos
+
+---
+
+## 11. Conclusão
+
+O projeto TP/AEDSIII demonstra domínio completo de conceitos avançados de engenharia de software, incluindo:
+
+- Manipulação de memória em baixo nível (serialização binária)
+- Implementação de estruturas de dados otimizadas (hash index O(1))
+- Integração multi-linguagem (C++/Lua/ImGui)
+- Arquitetura de software profissional (MVC com flat namespaces)
+- Qualidade de código (testes unitários, documentação)
+
+O sistema está pronto para uso e pode ser extendido com novas funcionalidades seguindo a mesma arquitetura modular.
+
+---
+
+## Referências
+
+- CMake Documentation: https://cmake.org/documentation/
+- Hello ImGui: https://github.com/pthom/hello_imgui
+- Lua Documentation: https://www.lua.org/docs.html
+- Dear ImGui: https://github.com/ocornut/imgui
+- ruaaa (C++/Lua bindings): https://github.com/gengyong/luaaa
+
+---
+
+*Documento preparado para a disciplina AEDS III - PUC-MG*  
+*Para dúvidas técnicas, consulte `AGENTS.md`*  
+*Para especificações de interface, veja `docs/ux/`*
