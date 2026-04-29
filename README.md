@@ -50,3 +50,16 @@ Os executáveis finais são gerados na pasta `builds/`:
 - `docs/modern_cpp_tutorial.md`: Guia de estilo e boas práticas aplicadas ao projeto.
 - `docs/modelagem_dados.md`: Detalhes técnicos sobre as entidades e o DER.
 - `tests/`: Suíte de testes unitários para validação de integridade.
+
+## 👥 Contribuidores
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/victorynogueira">
+        <img src="https://github.com/victorynogueira.png" width="100px;" alt="victorynogueira"/><br />
+        <sub><b>victorynogueira</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
