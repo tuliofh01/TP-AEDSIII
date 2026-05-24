@@ -1,8 +1,8 @@
--- StudentList.lua
+-- StudentList.scripts
 -- Lista todos estudantes ativos
 
 local M = {}
-local common = require("src.views.common")
+local common = require("common")
 
 function M.render()
 	local dm = getDataManager()

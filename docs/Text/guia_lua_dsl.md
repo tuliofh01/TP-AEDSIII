@@ -103,7 +103,7 @@ imgui.PopStyleColor()
 ### 1. Criar arquivo
 
 ```lua
--- src/views/ExemploView.lua
+-- src/views/ExemploView.scripts
 local M = {}
 
 function M.render()

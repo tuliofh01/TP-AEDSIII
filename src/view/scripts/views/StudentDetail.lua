@@ -1,8 +1,8 @@
--- StudentDetail.lua
+-- StudentDetail.scripts
 -- Consulta estudante por nome
 
 local M = {}
-local common = require("src.views.common")
+local common = require("common")
 
 local searchBuf = ""
 local resultText = ""

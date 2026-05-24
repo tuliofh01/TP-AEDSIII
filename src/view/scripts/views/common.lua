@@ -1,4 +1,4 @@
--- common.lua
+-- common.scripts
 -- Componentes UI compartilhados - tema minimalista 4 cores
 -- Preto (#000000), Branco (#FFFFFF), Vermelho (#FF0000), Verde (#00FF00)
 

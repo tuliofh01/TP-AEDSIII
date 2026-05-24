@@ -1,8 +1,8 @@
--- StudentCreate.lua
+-- StudentCreate.scripts
 -- Formulario de cadastro de estudante
 
 local M = {}
-local common = require("src.views.common")
+local common = require("common")
 
 local nameBuf = ""
 local birthBuf = ""

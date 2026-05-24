@@ -72,7 +72,7 @@ end
 Cada view Lua segue o padrão de módulo que retorna uma tabela com métodos:
 
 ```lua
--- StudentView.lua
+-- StudentView.scripts
 local M = {}
 
 local state = {
@@ -228,7 +228,7 @@ luaaa::LuaModule(L).fun("getDataManager", [&]() -> DataManager* {
 ### 4.3 Acessando no Lua
 
 ```lua
--- No router.lua ou outras views
+-- No router.scripts ou outras views
 local dm = getDataManager()
 dm:processItem("test item")
 print(dm.status)  -- "processing: test item"
@@ -242,7 +242,7 @@ print(dm.count)  -- 1
 ### 5.1 Navegação por Callback
 
 ```lua
--- router.lua
+-- router.scripts
 local currentView = "menu"
 
 function navigateTo(viewName)
@@ -267,7 +267,7 @@ end
 ### 5.2 Passing Data Entre Views
 
 ```lua
--- appData table global (definida no router.lua)
+-- appData table global (definida no router.scripts)
 local appData = {}
 
 function setAppData(key, value)
@@ -290,7 +290,7 @@ end
 ### 6.1 Estrutura Mínima
 
 ```lua
--- src/views/NewView.lua
+-- src/views/NewView.scripts
 local M = {}
 
 local state = {
@@ -316,7 +316,7 @@ return M
 ### 6.2 Registrando no Router
 
 ```lua
--- router.lua
+-- router.scripts
 local NewView = require("src.views.NewView")
 
 -- No renderContent():
@@ -345,7 +345,7 @@ O arquivo `common.lua` fornece componentes reutilizáveis:
 ### 7.2 Sistema de Tema
 
 ```lua
--- common.lua
+-- common.scripts
 local theme = {
     primary = {0.2, 0.4, 0.8, 1.0},    -- RGBA
     secondary = {0.4, 0.4, 0.4, 1.0},

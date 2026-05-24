@@ -90,12 +90,12 @@ int main(int argc, char** argv) {
 	lua_getfield(L, -1, "path");
 	std::string curPath = lua_tostring(L, -1);
 	lua_pop(L, 1);
-	lua_pushstring(L, (curPath + ";./src/views/?.lua;./src/views/?/init.lua").c_str());
+	lua_pushstring(L, (curPath + ";./src/view/scripts/views/?.lua;./src/view/scripts/views/?/init.lua").c_str());
 	lua_setfield(L, -2, "path");
 	lua_pop(L, 1);
 
-	// Carrega router.lua
-	if (luaL_dofile(L, "./src/views/router.lua") != LUA_OK) {
+	// Carrega router.scripts
+	if (luaL_dofile(L, "./src/view/scripts/views/router.lua") != LUA_OK) {
 		std::cerr << "Lua Erro: " << lua_tostring(L, -1) << std::endl;
 		lua_close(L);
 		return -1;

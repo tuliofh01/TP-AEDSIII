@@ -305,7 +305,7 @@ struct Course {
 ```lua
 local NewView = require("src.views.NewView")
 
--- In router.lua renderContent():
+-- In router.scripts renderContent():
 elseif currentView == "new" then
     NewView.render()
 end

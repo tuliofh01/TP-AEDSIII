@@ -89,7 +89,7 @@ namespace project_utility {
 	/**
 	 * @enum ViewId
 	 * @brief Unique identifiers for each GUI screen/view.
-	 * @desc Used by router.lua to determine which view to render.
+	 * @desc Used by router.scripts to determine which view to render.
 	 *       Each value corresponds to a Lua view file.
 	 */
 	enum class ViewId : uint8_t {
@@ -150,5 +150,5 @@ namespace project_utility {
  * END OF FILE - Enums.hpp
  * Purpose: Define all enum types for system state and operations.
  * Dependencies: <cstdint> for fixed-width integer types.
- * Used By: Record.hpp, DataManager.hpp, FileManager.cpp, router.lua.
+ * Used By: Record.hpp, DataManager.hpp, FileManager.cpp, router.scripts.
  * ======================================================================== */

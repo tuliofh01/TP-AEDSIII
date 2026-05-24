@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 project(TP_AEDSIII LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 20)
@@ -84,7 +85,13 @@ include(${HELLO_IMGUI_CMAKE_PATH}/hello_imgui_build_lib.cmake)
 # Cria diretorios de runtime
 # ======================
 file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/data)
-file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/src/views)
+file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/src/view/scripts/views)
+
+# Collect Lua scripts for IDE indexing (not compiled)
+file(GLOB LUA_SCRIPTS "${CMAKE_SOURCE_DIR}/src/view/scripts/views/*.lua")
+if(LUA_SCRIPTS)
+    source_group("Lua Scripts" FILES ${LUA_SCRIPTS})
+endif()
 
 # ======================
 # Configuracao de build
@@ -94,7 +101,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/builds)
 # Fontes C++ (estrutura flat: utility/, model/, controller/, view/)
 set(APP_SOURCES
 	${CMAKE_SOURCE_DIR}/src/main.cpp
-	${CMAKE_SOURCE_DIR}/src/view/ImguiBindings.cpp
+	${CMAKE_SOURCE_DIR}/src/view/bindings/ImguiBindings.cpp
 	${CMAKE_SOURCE_DIR}/src/model/Record.cpp
 	${CMAKE_SOURCE_DIR}/src/controller/FileManager.cpp
 	${CMAKE_SOURCE_DIR}/src/controller/IndexCtrl.cpp
@@ -112,7 +119,7 @@ target_include_directories(TP_AEDSIII PRIVATE
 	${CMAKE_SOURCE_DIR}/libs/hello_imgui/src
 )
 target_link_libraries(TP_AEDSIII PRIVATE
-	lua
+	liblua
 	hello-imgui::hello_imgui
 	${PLATFORM_LIBS}
 )

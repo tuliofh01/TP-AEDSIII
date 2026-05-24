@@ -134,6 +134,68 @@ static int lua_Spacing(lua_State* L) {
     return 0;
 }
 
+// ========================================
+// Missing ImGui bindings
+// ========================================
+
+static int lua_OpenPopup(lua_State* L) {
+    const char* str_id = luaL_checkstring(L, 1);
+    ImGui::OpenPopup(str_id);
+    return 0;
+}
+
+static int lua_CloseCurrentPopup(lua_State* L) {
+    (void)L;
+    ImGui::CloseCurrentPopup();
+    return 0;
+}
+
+static int lua_BeginPopupModal(lua_State* L) {
+    const char* name = luaL_checkstring(L, 1);
+    bool* open = nullptr;
+    if (lua_isboolean(L, 2)) {
+        if (!lua_toboolean(L, 2)) open = nullptr;
+        else {
+            static bool popupOpen = true;
+            open = &popupOpen;
+        }
+    }
+    ImGuiWindowFlags flags = 0;
+    if (lua_istable(L, 3)) {
+        lua_pushnil(L);
+        while (lua_next(L, 3) != 0) {
+            const char* flag = lua_tostring(L, -1);
+            if (strcmp(flag, "NoResize") == 0) flags |= ImGuiWindowFlags_NoResize;
+            else if (strcmp(flag, "NoTitleBar") == 0) flags |= ImGuiWindowFlags_NoTitleBar;
+            else if (strcmp(flag, "NoSavedSettings") == 0) flags |= ImGuiWindowFlags_NoSavedSettings;
+            lua_pop(L, 1);
+        }
+    }
+    bool result = ImGui::BeginPopupModal(name, open, flags);
+    lua_pushboolean(L, result);
+    return 1;
+}
+
+static int lua_PushID(lua_State* L) {
+    if (lua_isstring(L, 1)) {
+        const char* str_id = luaL_checkstring(L, 1);
+        ImGui::PushID(str_id);
+    } else if (lua_isnumber(L, 1)) {
+        int int_id = (int)luaL_checkinteger(L, 1);
+        ImGui::PushID(int_id);
+    } else if (lua_islightuserdata(L, 1)) {
+        void* ptr_id = lua_touserdata(L, 1);
+        ImGui::PushID(ptr_id);
+    }
+    return 0;
+}
+
+static int lua_PopID(lua_State* L) {
+    (void)L;
+    ImGui::PopID();
+    return 0;
+}
+
 static int lua_PushStyleColor(lua_State* L) {
     int idx = (int)luaL_checknumber(L, 1);
     ImU32 col;
@@ -158,7 +220,7 @@ static int lua_PopStyleColor(lua_State* L) {
 
 // ========================================
 // Tabela de funcoes (minimalista)
- // ========================================
+// ========================================
 static const luaL_Reg imgui_funcs[] = {
     {"SetNextWindowPos", lua_SetNextWindowPos},
     {"SetNextWindowSize", lua_SetNextWindowSize},
@@ -173,6 +235,11 @@ static const luaL_Reg imgui_funcs[] = {
     {"Spacing", lua_Spacing},
     {"PushStyleColor", lua_PushStyleColor},
     {"PopStyleColor", lua_PopStyleColor},
+    {"OpenPopup", lua_OpenPopup},
+    {"CloseCurrentPopup", lua_CloseCurrentPopup},
+    {"BeginPopupModal", lua_BeginPopupModal},
+    {"PushID", lua_PushID},
+    {"PopID", lua_PopID},
     {nullptr, nullptr}
 };
 

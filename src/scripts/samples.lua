@@ -1,7 +1,7 @@
 #!/usr/bin/env lua
--- seed_data.lua
+-- samples.scripts
 -- Script para popular dados de teste no sistema
--- Usage: lua seed_data.lua [count]
+-- Usage: scripts samples.scripts [count]
 -- Default: 20 registros
 
 -- ========================================
@@ -53,12 +53,12 @@ local arg = {...}
 local count = tonumber(arg[1]) or 20
 
 if count < 1 or count > 30 then
-    print("Erro: use seed_data.lua [1-30]")
+    print("Erro: use samples.scripts [1-30]")
     os.exit(1)
 end
 
 print("======================================")
-print(" seed_data.lua - Dados de Teste")
+print(" samples.scripts - Dados de Teste")
 print("======================================")
 print(string.format("Gerando %d registros...", count))
 
@@ -66,7 +66,7 @@ print(string.format("Gerando %d registros...", count))
 local ok, dm = pcall(getDataManager)
 if not ok or not dm then
     print("Erro: DataManager nao disponivel")
-    print("Execute via interface GUI ou carregue primeiro o router.lua")
+    print("Execute via interface GUI ou carregue primeiro o router.scripts")
     os.exit(1)
 end
 

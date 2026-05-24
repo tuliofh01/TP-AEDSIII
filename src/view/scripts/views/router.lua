@@ -1,11 +1,11 @@
--- router.lua
+-- router.scripts
 -- Controlador de navegacao - carrega views e renderiza UI principal
 
-local common = require("src.views.common")
-local MainMenu = require("src.views.MainMenu")
-local StudentCreate = require("src.views.StudentCreate")
-local StudentList = require("src.views.StudentList")
-local StudentDetail = require("src.views.StudentDetail")
+local common = require("common")
+local MainMenu = require("MainMenu")
+local StudentCreate = require("StudentCreate")
+local StudentList = require("StudentList")
+local StudentDetail = require("StudentDetail")
 
 -- Estado da view atual
 local currentView = "menu"

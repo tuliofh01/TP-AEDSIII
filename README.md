@@ -1,7 +1,6 @@
 # TP/AEDSIII - Sistema de Matrícula Acadêmica
 
-**Trabalho Prático da Disciplina AEDS III**  
-Pontifícia Universidade Católica de Minas Gerais (PUC-MG)
+**Trabalho Prático da Disciplina AEDS III** - Pontifícia Universidade Católica de Minas Gerais (PUC-MG)
 
 ---
 

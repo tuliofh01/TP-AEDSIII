@@ -1,8 +1,8 @@
--- MainMenu.lua
+-- MainMenu.scripts
 -- Menu principal do sistema
 
 local M = {}
-local common = require("src.views.common")
+local common = require("common")
 
 function M.render()
 	imgui.Text("Sistema de Matricula Academica")
