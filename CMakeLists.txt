@@ -8,9 +8,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ======================
 # Build Speed Optimizations
 # ======================
-# Persist FetchContent dependencies to avoid re-downloads on clean builds
-set(FETCHCONTENT_BASE_DIR ${CMAKE_SOURCE_DIR}/.deps_cache)
-
 # Enable ccache for 80%+ faster rebuilds
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -28,10 +25,13 @@ message(STATUS "Building for platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "Using generator: ${CMAKE_GENERATOR}")
 
 # ======================
-# FetchContent - Todas libs de fontes locais
+# Dependencies - libs/ folder (pre-cloned repos, no internet download)
 # ======================
-set(FETCHCONTENT_QUIET FALSE)
 set(LOCAL_LIBS_DIR "${CMAKE_SOURCE_DIR}/libs")
+set(FETCHCONTENT_SOURCE_DIR_HELLO_IMGUI ${LOCAL_LIBS_DIR}/hello_imgui)
+set(FETCHCONTENT_SOURCE_DIR_LUA ${LOCAL_LIBS_DIR}/lua)
+set(FETCHCONTENT_SOURCE_DIR_LUAAA ${LOCAL_LIBS_DIR}/luaaa)
+set(FETCHCONTENT_QUIET FALSE)
 
 # hello_imgui options (MUST be set BEFORE FetchContent_MakeAvailable)
 set(HELLOIMGUI_BUILD_AUTOMATION_TEST OFF)
@@ -47,18 +47,21 @@ set(HELLOIMGUI_HAS_OPENGL3 ON)
 FetchContent_Declare(hello_imgui
 	GIT_REPOSITORY https://github.com/pthom/hello_imgui.git
 	GIT_TAG        v1.5.0
+	SOURCE_DIR     ${LOCAL_LIBS_DIR}/hello_imgui
 )
 FetchContent_MakeAvailable(hello_imgui)
 
 FetchContent_Declare(lua
 	GIT_REPOSITORY https://github.com/marovira/lua.git
 	GIT_TAG        master
+	SOURCE_DIR     ${LOCAL_LIBS_DIR}/lua
 )
 FetchContent_MakeAvailable(lua)
 
 FetchContent_Declare(luaaa
 	GIT_REPOSITORY https://github.com/gengyong/luaaa.git
 	GIT_TAG        master
+	SOURCE_DIR     ${LOCAL_LIBS_DIR}/luaaa
 )
 FetchContent_MakeAvailable(luaaa)
 

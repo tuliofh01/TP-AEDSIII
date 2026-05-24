@@ -2,7 +2,12 @@
 cmake-build-*/
 build/
 builds/
-.deps_cache/
+
+# External dependencies (cloned/fetched by CMake)
+libs/hello_imgui/
+libs/imgui_lua_bindings/
+libs/lua/
+libs/luaaa/
 
 # CMake generated files
 CMakeCache.txt
