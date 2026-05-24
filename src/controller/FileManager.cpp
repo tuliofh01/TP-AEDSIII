@@ -1,4 +1,6 @@
 #include "FileManager.hpp"
+#include "utility/Enums.hpp"
+using namespace project_utility;
 
 namespace project_controller {
 

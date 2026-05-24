@@ -135,6 +135,17 @@ namespace luaaa {
 	};
 
 	template<>
+	struct LuaStack<std::optional<project_model::BTreeLeafValue>> {
+		static void put(lua_State* L, const std::optional<project_model::BTreeLeafValue>& opt) {
+			if (opt.has_value()) {
+				LuaStack<project_model::BTreeLeafValue>::put(L, opt.value());
+			} else {
+				lua_pushnil(L);
+			}
+		}
+	};
+
+	template<>
 	struct LuaStack<std::vector<project_model::BTreeLeafValue>> {
 		static void put(lua_State* L, const std::vector<project_model::BTreeLeafValue>& vec) {
 			lua_newtable(L);

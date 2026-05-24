@@ -1,5 +1,6 @@
 #include "DataManager.hpp"
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <filesystem>
 
@@ -232,10 +233,11 @@ namespace project_controller {
 		using namespace project_utility;
 
 		// Save current chunk capacities
-		auto oldCaps = std::array<uint32_t, 4>{
-			chunks_[0].capacity, chunks_[1].capacity,
-			chunks_[2].capacity, chunks_[3].capacity
-		};
+		std::array<uint32_t, 4> oldCaps;
+		oldCaps[0] = chunks_[0].capacity;
+		oldCaps[1] = chunks_[1].capacity;
+		oldCaps[2] = chunks_[2].capacity;
+		oldCaps[3] = chunks_[3].capacity;
 
 		// Double the overflowing chunk's capacity
 		chunks_[ci].capacity *= 2;
@@ -384,7 +386,7 @@ namespace project_controller {
 
 		if (markDeletedInChunk(CHUNK_STU, idxOpt->recordIndex)) {
 			indexCtrl_.remove("STU:" + std::to_string(id));
-			indexCtrl_.save();
+			(void)indexCtrl_.save();
 			return true;
 		}
 
@@ -467,7 +469,7 @@ namespace project_controller {
 
 		if (markDeletedInChunk(CHUNK_TCH, idxOpt->recordIndex)) {
 			indexCtrl_.remove("TCH:" + std::to_string(id));
-			indexCtrl_.save();
+			(void)indexCtrl_.save();
 			return true;
 		}
 
@@ -543,7 +545,7 @@ namespace project_controller {
 
 		if (markDeletedInChunk(CHUNK_SUB, idxOpt->recordIndex)) {
 			indexCtrl_.remove("SUB:" + std::to_string(id));
-			indexCtrl_.save();
+			(void)indexCtrl_.save();
 			return true;
 		}
 

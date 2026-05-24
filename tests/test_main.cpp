@@ -1,7 +1,3 @@
-/**
- * @file test_main.cpp
- * @brief Testes unitarios para o DataManager (Arquitetura MVC).
- */
 #include <iostream>
 #include <cassert>
 #include <cstring>
@@ -11,15 +7,16 @@
 
 #include "controller/DataManager.hpp"
 
-#define TEST_DATA_FILE "data/students_test.dat"
+#define TEST_DIR "data/test"
 
-// ========================================
-// TestRunner - framework minimalista
-// ========================================
+static void cleanup() {
+	if (std::filesystem::exists(TEST_DIR))
+		std::filesystem::remove_all(TEST_DIR);
+}
+
 class TestRunner {
 	int passed_ = 0;
 	int failed_ = 0;
-
 public:
 	void run(const char* name, std::function<void()> test) {
 		try {
@@ -30,13 +27,11 @@ public:
 			std::cerr << "[FAIL] " << name << ": " << e.what() << '\n';
 			++failed_;
 		} catch (...) {
-			std::cerr << "[FAIL] " << name << ": excecao desconhecida\n";
+			std::cerr << "[FAIL] " << name << ": unknown exception\n";
 			++failed_;
 		}
 	}
-
 	int getFailed() const { return failed_; }
-
 	void summary() {
 		std::cout << "\n============================\n";
 		std::cout << "Total: " << (passed_ + failed_)
@@ -44,180 +39,136 @@ public:
 			<< " | Fail: " << failed_ << '\n';
 		std::cout << "============================\n";
 		if (failed_ == 0)
-			std::cout << "TODOS OS TESTES PASSARAM!\n";
+			std::cout << "ALL TESTS PASSED!\n";
 		else
-			std::cerr << "ALGUNS TESTES FALHARAM!\n";
+			std::cerr << "SOME TESTS FAILED!\n";
 	}
 };
 
 static TestRunner runner;
 
-// Limpa arquivo de teste
-static void cleanup() {
-	if (std::filesystem::exists(TEST_DATA_FILE))
-		std::filesystem::remove(TEST_DATA_FILE);
-	auto idxPath = std::string(TEST_DATA_FILE).replace(
-		std::string(TEST_DATA_FILE).find('.'), 4, ".idx");
-	if (std::filesystem::exists(idxPath))
-		std::filesystem::remove(idxPath);
-}
-
-// ========================================
-// Testes
-// ========================================
 static void test_initialize() {
 	cleanup();
 	project_controller::DataManager dm;
-	assert(dm.initialize(TEST_DATA_FILE) && "Falha ao inicializar");
+	assert(dm.initialize(TEST_DIR) && "Failed to initialize");
 }
 
 static void test_create_student() {
 	cleanup();
 	project_controller::DataManager dm;
-	(void)dm.initialize(TEST_DATA_FILE);
-
-	bool ok = dm.createStudent("Joao Silva", 1, 15051990);
-	assert(ok && "Falha ao criar estudante");
-	assert(dm.getActiveCount() == 1 && "Contador ativo incorreto");
+	(void)dm.initialize(TEST_DIR);
+	bool ok = dm.createStudent("Joao Silva", "joao@email.com", "12345678901", 15051990, "Ciencia Comp", 2026);
+	assert(ok && "Failed to create student");
+	assert(dm.getActiveCount('S') == 1 && "Active count should be 1");
 }
 
-static void test_read_by_display_id() {
+static void test_read_student() {
 	cleanup();
 	project_controller::DataManager dm;
-	(void)dm.initialize(TEST_DATA_FILE);
-	(void)dm.createStudent("Maria Santos", 2, 20101995);
-
+	(void)dm.initialize(TEST_DIR);
+	(void)dm.createStudent("Maria Santos", "maria@email.com", "98765432101", 20101995, "Engenharia", 2025);
 	auto rec = dm.readStudent(1);
-	assert(rec.has_value() && "Falha ao ler estudante");
-	assert(std::strcmp(rec->name, "Maria Santos") == 0 && "Nome incorreto");
+	assert(rec.has_value() && "Failed to read student");
+	assert(std::strcmp(rec->name, "Maria Santos") == 0 && "Wrong name");
 }
 
 static void test_read_nonexistent() {
 	cleanup();
 	project_controller::DataManager dm;
-	(void)dm.initialize(TEST_DATA_FILE);
-
+	(void)dm.initialize(TEST_DIR);
 	auto rec = dm.readStudent(999);
-	assert(!rec.has_value() && "Nao deveria encontrar estudante");
+	assert(!rec.has_value() && "Should not find student");
 }
 
-static void test_list_all() {
+static void test_list_all_students() {
 	cleanup();
 	project_controller::DataManager dm;
-	(void)dm.initialize(TEST_DATA_FILE);
-
-	(void)dm.createStudent("Aluno A", 1, 10101010);
-	(void)dm.createStudent("Aluno B", 2, 20202020);
-	(void)dm.createStudent("Aluno C", 3, 30303030);
-
-	auto list = dm.listAll();
-	assert(list.size() == 3 && "Deveria ter 3 estudantes");
-	assert(list[0].id == 1 && "ID dinamico incorreto");
-	assert(list[1].id == 2 && "ID dinamico incorreto");
-	assert(list[2].id == 3 && "ID dinamico incorreto");
+	(void)dm.initialize(TEST_DIR);
+	(void)dm.createStudent("Aluno A", "a@a.com", "1", 10101010, "Curso", 2026);
+	(void)dm.createStudent("Aluno B", "b@b.com", "2", 20202020, "Curso", 2026);
+	(void)dm.createStudent("Aluno C", "c@c.com", "3", 30303030, "Curso", 2026);
+	auto list = dm.listAllStudents();
+	assert(list.size() == 3 && "Should have 3 students");
 }
 
 static void test_soft_delete() {
 	cleanup();
 	project_controller::DataManager dm;
-	(void)dm.initialize(TEST_DATA_FILE);
-	(void)dm.createStudent("Para Deletar", 4, 11111111);
-	int id = dm.getNextDisplayId() - 1;
-
-	bool ok = dm.deleteStudent(id);
-	assert(ok && "Falha ao deletar");
-	assert(dm.getActiveCount() == 0 && "Deveria ter 0 ativos");
+	(void)dm.initialize(TEST_DIR);
+	(void)dm.createStudent("Para Deletar", "del@del.com", "0", 11111111, "Curso", 2026);
+	bool ok = dm.deleteStudent(1);
+	assert(ok && "Failed to delete");
+	assert(dm.getActiveCount('S') == 0 && "Should have 0 active");
 }
 
-static void test_delete_recalculates_ids() {
+static void test_create_teacher_and_subject() {
 	cleanup();
 	project_controller::DataManager dm;
-	(void)dm.initialize(TEST_DATA_FILE);
-
-	(void)dm.createStudent("Primeiro", 1, 10000001);
-	(void)dm.createStudent("Segundo", 2, 10000002);
-	(void)dm.createStudent("Terceiro", 3, 10000003);
-
-	// Deleta o segundo (ID 2)
-	(void)dm.deleteStudent(2);
-
-	auto list = dm.listAll();
-	assert(list.size() == 2 && "Deveria ter 2 ativos");
-	assert(list[0].id == 1 && "Primeiro deveria ser ID 1");
-	assert(list[1].id == 2 && "Terceiro deveria ser ID 2 (recalculado)");
+	(void)dm.initialize(TEST_DIR);
+	bool tOk = dm.createTeacher("Prof Silva", "silva@uni.com", "11122233344", "DCC", "BD", 10032020);
+	assert(tOk && "Failed to create teacher");
+	bool sOk = dm.createSubject("BD II", "BDI002", 60, 1);
+	assert(sOk && "Failed to create subject");
+	auto sub = dm.readSubject(1);
+	assert(sub.has_value() && "Should read subject");
+	assert(std::strcmp(sub->name, "BD II") == 0 && "Wrong subject name");
 }
 
-static void test_search_by_name() {
+static void test_enrollment() {
 	cleanup();
 	project_controller::DataManager dm;
-	(void)dm.initialize(TEST_DATA_FILE);
-	(void)dm.createStudent("Busca Teste", 5, 22022000);
-
-	auto rec = dm.searchByName("Busca Teste");
-	assert(rec.has_value() && "Nao encontrou por nome");
+	(void)dm.initialize(TEST_DIR);
+	(void)dm.createStudent("Aluno", "a@a.com", "1", 10101010, "Curso", 2026);
+	(void)dm.createTeacher("Prof", "p@u.com", "2", "DCC", "BD", 10032020);
+	(void)dm.createSubject("BD", "BD001", 60, 1);
+	bool enr = dm.enrollStudent(1, 1, 1, "2026-1");
+	assert(enr && "Failed to enroll");
+	auto e = dm.getEnrollment(1, 1);
+	assert(e.has_value() && "Should find enrollment");
+	assert(std::strcmp(e->semesterStr().c_str(), "2026-1") == 0 && "Wrong semester");
 }
 
-static void test_create_empty_name_fails() {
+static void test_update_grade() {
 	cleanup();
 	project_controller::DataManager dm;
-	(void)dm.initialize(TEST_DATA_FILE);
-
-	bool ok = dm.createStudent("", 0, 0);
-	assert(!ok && "Nao deveria permitir nome vazio");
+	(void)dm.initialize(TEST_DIR);
+	(void)dm.createStudent("Aluno", "a@a.com", "1", 10101010, "Curso", 2026);
+	(void)dm.createTeacher("Prof", "p@u.com", "2", "DCC", "BD", 10032020);
+	(void)dm.createSubject("BD", "BD001", 60, 1);
+	(void)dm.enrollStudent(1, 1, 1, "2026-1");
+	bool up = dm.updateGrade(1, 1, 8.5f);
+	assert(up && "Failed to update grade");
+	auto e = dm.getEnrollment(1, 1);
+	assert(e.has_value() && e->grade == 8.5f && "Grade mismatch");
 }
 
-static void test_get_next_display_id() {
+static void test_enrollments_by_student() {
 	cleanup();
 	project_controller::DataManager dm;
-	(void)dm.initialize(TEST_DATA_FILE);
-
-	assert(dm.getNextDisplayId() == 1 && "Proximo ID deveria ser 1");
-	(void)dm.createStudent("Teste ID", 1, 10000000);
-	assert(dm.getNextDisplayId() == 2 && "Proximo ID deveria ser 2");
-}
-
-static void test_multiple_create_delete_cycle() {
-	cleanup();
-	project_controller::DataManager dm;
-	(void)dm.initialize(TEST_DATA_FILE);
-
-	// Cria 5
-	for (int i = 0; i < 5; ++i) {
-		char name[64];
-		std::sprintf(name, "Estudante %d", i);
-		(void)dm.createStudent(name, i, 10101000 + i);
-	}
-	assert(dm.getActiveCount() == 5);
-
-	// Deleta 3
-	(void)dm.deleteStudent(1);
-	(void)dm.deleteStudent(2);
-	(void)dm.deleteStudent(3);
-
-	assert(dm.getActiveCount() == 2);
-
-	auto list = dm.listAll();
-	assert(list.size() == 2);
-	// IDs recalculados
-	assert(list[0].id == 1);
-	assert(list[1].id == 2);
+	(void)dm.initialize(TEST_DIR);
+	(void)dm.createStudent("Aluno", "a@a.com", "1", 10101010, "Curso", 2026);
+	(void)dm.createTeacher("Prof", "p@u.com", "2", "DCC", "BD", 10032020);
+	(void)dm.createSubject("BD", "BD001", 60, 1);
+	(void)dm.createSubject("LP", "LP001", 60, 1);
+	(void)dm.enrollStudent(1, 1, 1, "2026-1");
+	(void)dm.enrollStudent(1, 2, 1, "2026-1");
+	auto list = dm.getEnrollmentsByStudent(1);
+	assert(list.size() == 2 && "Should have 2 enrollments");
 }
 
 int main() {
-	std::cout << "=== Testes do DataManager (Arquitetura MVC) ===\n";
-	std::cout << "Executando testes...\n\n";
+	std::cout << "=== DataManager Tests ===\n\n";
 
 	runner.run("test_initialize", test_initialize);
 	runner.run("test_create_student", test_create_student);
-	runner.run("test_read_by_display_id", test_read_by_display_id);
+	runner.run("test_read_student", test_read_student);
 	runner.run("test_read_nonexistent", test_read_nonexistent);
-	runner.run("test_list_all", test_list_all);
+	runner.run("test_list_all_students", test_list_all_students);
 	runner.run("test_soft_delete", test_soft_delete);
-	runner.run("test_delete_recalculates_ids", test_delete_recalculates_ids);
-	runner.run("test_search_by_name", test_search_by_name);
-	runner.run("test_create_empty_name_fails", test_create_empty_name_fails);
-	runner.run("test_get_next_display_id", test_get_next_display_id);
-	runner.run("test_multiple_create_delete_cycle", test_multiple_create_delete_cycle);
+	runner.run("test_create_teacher_and_subject", test_create_teacher_and_subject);
+	runner.run("test_enrollment", test_enrollment);
+	runner.run("test_update_grade", test_update_grade);
+	runner.run("test_enrollments_by_student", test_enrollments_by_student);
 
 	runner.summary();
 	return runner.getFailed() > 0 ? 1 : 0;

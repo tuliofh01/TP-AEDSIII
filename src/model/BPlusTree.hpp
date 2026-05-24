@@ -63,6 +63,7 @@ namespace project_model {
 		int64_t allocatePage(char type);
 		void readPage(int64_t pageId, std::vector<std::byte>& buf) const;
 		void writePage(int64_t pageId, const std::vector<std::byte>& buf);
+		std::vector<std::byte> newPage(char type);
 
 		void saveHeader();
 		void loadHeader();
