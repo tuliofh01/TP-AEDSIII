@@ -1,5 +1,5 @@
--- StudentCreate.lua
--- Formulario de cadastro de estudante
+-- TeacherCreate.lua
+-- Formulario de cadastro de professor
 
 local M = {}
 local common = require("common")
@@ -7,43 +7,43 @@ local common = require("common")
 local nameBuf = ""
 local emailBuf = ""
 local cpfBuf = ""
-local birthBuf = ""
-local courseBuf = ""
-local yearBuf = ""
+local deptBuf = ""
+local specBuf = ""
+local hireBuf = ""
 
 function M.render()
-	imgui.Text("Cadastrar Estudante")
+	imgui.Text("Cadastrar Professor")
 	imgui.Separator()
 	imgui.Spacing()
 
 	imgui.Text("Nome:")
-	imgui.PushID("stu_name")
+	imgui.PushID("tch_name")
 	nameBuf = imgui.InputText("##name", nameBuf)
 	imgui.PopID()
 
 	imgui.Text("Email:")
-	imgui.PushID("stu_email")
+	imgui.PushID("tch_email")
 	emailBuf = imgui.InputText("##email", emailBuf)
 	imgui.PopID()
 
 	imgui.Text("CPF:")
-	imgui.PushID("stu_cpf")
+	imgui.PushID("tch_cpf")
 	cpfBuf = imgui.InputText("##cpf", cpfBuf)
 	imgui.PopID()
 
-	imgui.Text("Nascimento (DDMMAAAA):")
-	imgui.PushID("stu_birth")
-	birthBuf = imgui.InputText("##birth", birthBuf)
+	imgui.Text("Departamento:")
+	imgui.PushID("tch_dept")
+	deptBuf = imgui.InputText("##dept", deptBuf)
 	imgui.PopID()
 
-	imgui.Text("Curso:")
-	imgui.PushID("stu_course")
-	courseBuf = imgui.InputText("##course", courseBuf)
+	imgui.Text("Especializacao:")
+	imgui.PushID("tch_spec")
+	specBuf = imgui.InputText("##spec", specBuf)
 	imgui.PopID()
 
-	imgui.Text("Ano Ingresso:")
-	imgui.PushID("stu_year")
-	yearBuf = imgui.InputText("##year", yearBuf)
+	imgui.Text("Contratacao (DDMMAAAA):")
+	imgui.PushID("tch_hire")
+	hireBuf = imgui.InputText("##hire", hireBuf)
 	imgui.PopID()
 
 	imgui.Spacing()
@@ -54,13 +54,12 @@ function M.render()
 			if nameBuf == "" or #nameBuf < 2 then
 				common.errorPopup("Nome deve ter pelo menos 2 caracteres")
 			else
-				local birthDate = tonumber(birthBuf) or 0
-				local year = tonumber(yearBuf) or 0
-				local ok = dm:createStudent(nameBuf, emailBuf, cpfBuf, birthDate, courseBuf, year)
+				local hireDate = tonumber(hireBuf) or 0
+				local ok = dm:createTeacher(nameBuf, emailBuf, cpfBuf, deptBuf, specBuf, hireDate)
 				if ok then
 					nameBuf = ""; emailBuf = ""; cpfBuf = ""
-					birthBuf = ""; courseBuf = ""; yearBuf = ""
-					common.errorPopup("Estudante cadastrado com sucesso!")
+					deptBuf = ""; specBuf = ""; hireBuf = ""
+					common.errorPopup("Professor cadastrado com sucesso!")
 				else
 					common.errorPopup(dm:getLastError())
 				end

@@ -1,55 +1,89 @@
 @startuml estrutura_binaria
-' Diagrama da Estrutura Binaria do Registro de Estudante
-' Cada registro tem 67 bytes: 1 byte status + 66 bytes de dados
-
 skinparam backgroundColor #FFFFFF
-skinparam componentStyle uml2
-skinparam defaultFontSize 14
+skinparam componentStyle rectangle
+skinparam defaultFontSize 12
 skinparam defaultFontName Monospaced
 
-title Estrutura Binaria do Registro - StudentRecord (67 bytes)
+title Estrutura Binaria - records.dat
 
-package "Registro de Estudante (67 bytes)" {
-    [status\n(1 byte)\n'A' ou '*'] as status
-    [id\n(4 bytes)\nint32_t] as id
-    [userId\n(4 bytes)\nint32_t] as userId
-    ["name\n(50 bytes)\nchar50"] as name
-    [birthDate\n(4 bytes)\nuint32_t] as birth
-    [padding\n(4 bytes)] as padding
+package "registros.dat (arquivo unico)" {
+    [File Header\n(256 bytes)\nmagic + chunk table] as header
+
+    package "Alunos (chunk 'S')\n139 bytes/registro\n100 registros" {
+        [status\n1B] as s_st
+        [type\n1B] as s_ty
+        [userId\n4B] as s_uid
+        [name\n50B] as s_nm
+        [email\n30B] as s_em
+        [cpf\n15B] as s_cpf
+        [birthDate\n4B] as s_bd
+        [courseName\n30B] as s_cn
+        [enrollmentYear\n4B] as s_ey
+    }
+
+    package "Professores (chunk 'T')\n165 bytes/registro\n100 registros" {
+        [status\n1B] as t_st
+        [type\n1B] as t_ty
+        [userId\n4B] as t_uid
+        [name\n50B] as t_nm
+        [email\n30B] as t_em
+        [cpf\n15B] as t_cpf
+        [department\n30B] as t_dp
+        [specialization\n30B] as t_sp
+        [hireDate\n4B] as t_hd
+    }
+
+    package "Disciplinas (chunk 'B')\n84 bytes/registro\n100 registros" {
+        [status\n1B] as b_st
+        [type\n1B] as b_ty
+        [subjectId\n4B] as b_sid
+        [name\n50B] as b_nm
+        [code\n20B] as b_cd
+        [credits\n4B] as b_cr
+        [teacherId\n4B] as b_tid
+    }
+
+    package "Arvore B+ (chunk 'I')\n4 paginas de 4096B" {
+        [Cabecalho\n24B] as th
+        [Pagina 0\n4096B] as tp0
+        [Pagina 1\n4096B] as tp1
+        [Pagina 2\n4096B] as tp2
+        [Pagina 3\n4096B] as tp3
+    }
 }
 
-status -[hidden]right-> id
-id -[hidden]right-> userId
-userId -[hidden]right-> name
-name -[hidden]right-> birth
-birth -[hidden]right-> padding
+header -[hidden]-> s_st
+s_st -[hidden]-> t_st
+t_st -[hidden]-> b_st
+b_st -[hidden]-> th
 
-note right of status
-  'A' = Ativo
-  '*' = Deletado
-  (soft delete)
+note left of header
+  magic: 'REC1'
+  version: 1
+  chunkCount: 4
 end note
 
-note right of id
-  ID dinamico
-  recalculado
-  ao listar
+note bottom of s_cn
+  Chave no indice hash:
+  "STU:42"
 end note
 
-note bottom of name
-  Nome de tamanho fixo
-  null-terminated
-  max 49 caracteres
+note bottom of t_hd
+  Chave no indice hash:
+  "TCH:7"
 end note
 
-note bottom of birth
-  Formato DDMMAAAA
-  Ex: 15051990
+note bottom of b_tid
+  Chave no indice hash:
+  "SUB:15"
 end note
 
-note bottom of padding
-  Alinhamento
-  para 67 bytes
+note bottom of tp3
+  Chave na arvore:
+  "ENR:STU:0042:SUB:0015"
+  Valor: studentId,
+  subjectId, teacherId,
+  grade, semester
 end note
 
 @enduml

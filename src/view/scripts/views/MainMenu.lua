@@ -1,36 +1,60 @@
--- MainMenu.scripts
+-- MainMenu.lua
 -- Menu principal do sistema
 
 local M = {}
 local common = require("common")
 
 function M.render()
+	local dm = getDataManager()
+
 	imgui.Text("Sistema de Matricula Academica")
 	imgui.Separator()
 	imgui.Spacing()
 
-	common.textColored("Bem-vindo ao sistema de gestao de estudantes.", common.COLORS.Black)
+	common.textColored("Bem-vindo ao sistema de gestao academica.", common.COLORS.Black)
 	imgui.Spacing()
 
 	imgui.Text("Selecione uma opcao na barra lateral para comecar.")
 	imgui.Spacing()
 	imgui.Spacing()
 
-	-- Acoes rapidas
+	-- Stats
+	imgui.Text("Resumo:")
+	imgui.Separator()
+	imgui.Spacing()
+
+	if dm then
+		local sc = dm:getActiveCount('S')
+		local tc = dm:getActiveCount('T')
+		local bc = dm:getActiveCount('B')
+		common.textColored("Estudantes ativos: " .. tostring(sc), common.COLORS.Green)
+		common.textColored("Professores ativos: " .. tostring(tc), common.COLORS.Green)
+		common.textColored("Disciplinas ativas: " .. tostring(bc), common.COLORS.Green)
+	end
+
+	imgui.Spacing()
+	imgui.Spacing()
+
+	-- Quick actions
 	imgui.Text("Acoes Rapidas:")
 	imgui.Separator()
+	imgui.Spacing()
 
-	if common.button("Cadastrar Estudante", common.COLORS.Green, 200, 35) then
-		-- Navegacao via sidebar
+	if common.button("Cadastrar Estudante", common.COLORS.Green, 200, 30) then
 	end
 	imgui.Spacing()
 
-	if common.button("Listar Estudantes", common.COLORS.Black, 200, 35) then
+	if common.button("Cadastrar Professor", common.COLORS.Green, 200, 30) then
 	end
 	imgui.Spacing()
 
-	if common.button("Consultar por Nome", common.COLORS.Black, 200, 35) then
+	if common.button("Cadastrar Disciplina", common.COLORS.Green, 200, 30) then
 	end
+	imgui.Spacing()
+
+	if common.button("Matricular Aluno", common.COLORS.Black, 200, 30) then
+	end
+	imgui.Spacing()
 end
 
 return M

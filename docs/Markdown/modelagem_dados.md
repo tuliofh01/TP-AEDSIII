@@ -1,21 +1,40 @@
-# Modelagem de Dados (DER) - Sistema de Matrícula Acadêmica
+# Modelagem de Dados (DER) - Sistema de Matricula Academica
 
-Este documento descreve as relações fundamentais que regem a integridade do sistema de gerenciamento de dados em memória secundária.
+## Relacoes de Dados
 
-## 📌 Descrição do Projeto
-O sistema permite o gerenciamento de usuários Estudantes e Professores, Cursos e Módulos, com um fluxo completo de solicitação de matrícula.
+| Origem | Destino | Cardinalidade | Descricao |
+|--------|---------|---------------|-----------|
+| **User** | **Student** | 1:1 | Especializacao de usuario como aluno |
+| **User** | **Teacher** | 1:1 | Especializacao de usuario como professor |
+| **Teacher** | **Subject** | 1:N | Um professor ministra varias disciplinas |
+| **Student** | **Subject** | N:N | Matricula via arvore B+ (enrollment) |
 
-## 🛠️ Relações de Dados
+## Estrutura de Dados
 
-| Origem (Pai) | Destino (Filho) | Cardinalidade | Descrição |
-| :--- | :--- | :--- | :--- |
-| **User** | **Email** | 1 : N | Um usuário pode ter vários e-mails cadastrados. |
-| **User** | **Phone** | 1 : N | Um usuário pode ter vários números de telefone. |
-| **User** | **Student** | 1 : 1 | Especialização: Um usuário possui um perfil de aluno. |
-| **User** | **Teacher** | 1 : 1 | Especialização: Um usuário possui um perfil de docente. |
-| **Course** | **Module** | 1 : N | Um curso é composto por vários módulos. |
-| **Teacher** | **Module** | 1 : N | Um professor é responsável por ministrar vários módulos. |
-| **Student** | **Register** | 1 : N | Um aluno possui várias solicitações de matrícula. |
-| **Module** | **Register** | 1 : N | Um módulo recebe matrículas de vários alunos. |
+### UserRecord (classe base C++, nao persistida diretamente)
+- status, type, userId, name, email, cpf
 
-Para visualização gráfica destas relações, consulte os diagramas em `docs/UML Diagrams/`.
+### StudentRecord (persistido no chunk 'S')
+- Herda UserRecord
+- birthDate, courseName, enrollmentYear
+
+### TeacherRecord (persistido no chunk 'T')
+- Herda UserRecord
+- department, specialization, hireDate
+
+### SubjectRecord (persistido no chunk 'B')
+- status, subjectId, name, code, credits, teacherId
+
+### Matricula (armazenada na arvore B+)
+- Chave: `ENR:STU:<id>:SUB:<id>`
+- Valor: studentId, subjectId, teacherId, grade, semester
+
+## Diferencas do Modelo Anterior
+
+1. **Arquivo unico** — todas as entidades em `records.dat` com chunks internos
+2. **Sem EnrollmentRecord** — matricula e a propria entrada na arvore B+
+3. **Indice hash** — busca rapida por ID ou nome, atualizado a cada insercao
+4. **UserRecord como base** — Student e Teacher compartilham campos comuns
+5. **Crescimento dinamico** — chunks duplicam de tamanho quando cheios
+
+*Documento criado para o projeto TP AEDS III - Modelagem de Dados*

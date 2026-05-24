@@ -1,5 +1,5 @@
--- StudentDetail.scripts
--- Consulta estudante por nome
+-- StudentDetail.lua
+-- Consulta estudante por ID
 
 local M = {}
 local common = require("common")
@@ -14,27 +14,34 @@ function M.render()
 		return
 	end
 
-	imgui.Text("Consultar Estudante por Nome")
+	imgui.Text("Consultar Estudante por ID")
 	imgui.Separator()
 	imgui.Spacing()
 
-	imgui.Text("Nome:")
+	imgui.Text("ID do Estudante:")
 	searchBuf = imgui.InputText("##search", searchBuf)
 	imgui.Spacing()
-	imgui.Spacing()
 
-	-- Botao buscar
 	if common.button("Buscar", common.COLORS.Green, 150, 35) then
 		if searchBuf == "" then
-			resultText = "Digite um nome para buscar"
+			resultText = "Digite um ID para buscar"
 		else
-			local rec = dm:searchByName(searchBuf)
-			if rec then
-				resultText = "ID: " .. tostring(rec.id) ..
-					"\nNome: " .. tostring(rec.name) ..
-					"\nNascimento: " .. tostring(rec.birthDate)
+			local id = tonumber(searchBuf)
+			if id then
+				local rec = dm:readStudent(id)
+				if rec then
+					resultText = "ID: " .. tostring(rec.id) ..
+						"\nNome: " .. tostring(rec.name) ..
+						"\nEmail: " .. tostring(rec.email) ..
+						"\nCPF: " .. tostring(rec.cpf) ..
+						"\nNascimento: " .. tostring(rec.birthDate) ..
+						"\nCurso: " .. tostring(rec.course) ..
+						"\nAno Ingresso: " .. tostring(rec.enrollmentYear)
+				else
+					resultText = "Nao encontrado: " .. dm:getLastError()
+				end
 			else
-				resultText = "Nao encontrado: " .. dm:getLastError()
+				resultText = "ID invalido"
 			end
 		end
 	end
@@ -43,9 +50,8 @@ function M.render()
 	imgui.Separator()
 	imgui.Spacing()
 
-	-- Resultado
 	if resultText ~= "" then
-		if resultText:find("Nao encontrado") or resultText:find("Digite") then
+		if resultText:find("Nao encontrado") or resultText:find("invalido") or resultText:find("Digite") then
 			common.textColored(resultText, common.COLORS.Red)
 		else
 			common.textColored(resultText, common.COLORS.Green)

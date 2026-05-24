@@ -1,90 +1,163 @@
 @startuml diagrama_classes
-' Diagrama de Classes UML - Nova Arquitetura com namespaces
-
 skinparam backgroundColor #FFFFFF
-skinparam defaultFontSize 14
-skinparam classAttributeFontSize 13
-
+skinparam defaultFontSize 13
 title Diagrama de Classes - TP AEDS III
 
-namespace tpaeds {
+namespace project_model {
 
-    class FileManager {
-        - fileStream_ : fstream
-        - filePath_ : string
-        - recordCount_ : size_t
-        + initialize(path) : bool
-        + readRecord(index) : optional<byte[]>
-        + appendRecord(data) : bool
-        + countActive() : uint32_t
-        + countTotal() : uint32_t
-        + markDeleted(index) : bool
-        + isDeleted(index) : bool
-        - calcOffset(index) : size_t
-        - readAt(buf, off) : bool
-        - writeAt(data, off) : bool
-        - updateCount() : void
+    class RecordSerializer {
+        + write<T>(buf, off, val) : void
+        + read<T>(buf, off) : T
+        + writeStr(buf, off, str, len) : void
+        + readStr(buf, off, len) : string
     }
 
-    class StudentRecord {
+    class UserRecord {
         + status : char
-        + id : int32_t
+        + type : char
         + userId : int32_t
         + name : char[50]
-        + birthDate : uint32_t
+        + email : char[30]
+        + cpf : char[15]
         + isActive() : bool
         + setActive() : void
         + setDeleted() : void
+        + writeCommonFields(buf) : void
+        + readCommonFields(buf) : void
+    }
+
+    class StudentRecord {
+        + birthDate : uint32_t
+        + courseName : char[30]
+        + enrollmentYear : int32_t
         + toBytes() : vector<byte>
         + fromBytes(data) : StudentRecord
-        + nameStr() : string
+    }
+
+    class TeacherRecord {
+        + department : char[30]
+        + specialization : char[30]
+        + hireDate : uint32_t
+        + toBytes() : vector<byte>
+        + fromBytes(data) : TeacherRecord
+    }
+
+    class SubjectRecord {
+        + status : char
+        + subjectId : int32_t
+        + name : char[50]
+        + code : char[20]
+        + credits : int32_t
+        + teacherId : int32_t
+        + toBytes() : vector<byte>
+        + fromBytes(data) : SubjectRecord
+    }
+
+    class BTreeLeafValue {
+        + studentId : int32_t
+        + subjectId : int32_t
+        + teacherId : int32_t
+        + grade : float
+        + semester : char[12]
+        + toBytes() : vector<byte>
+        + fromBytes(data) : BTreeLeafValue
+    }
+
+    class BPlusTree {
+        - rootPageId : int64_t
+        - pageCount : size_t
+        - entryCount : size_t
+        + initialize(file, offset, pages) : bool
+        + insert(key, value) : bool
+        + search(key) : optional<BTreeLeafValue>
+        + searchRange(prefix) : vector<pair>
+        + erase(key) : bool
+        - splitChild(parent, idx, child) : void
+        - insertNonFull(node, key, value) : void
+        - borrowOrMerge(parent, idx) : void
+    }
+
+    class FileHeader {
+        + magic : uint32_t
+        + version : uint32_t
+        + headerSize : uint32_t
+        + chunkCount : uint32_t
+        + nextStudentId, nextTeacherId, nextSubjectId : uint32_t
+        + toBytes() : vector<byte>
+        + fromBytes(data) : FileHeader
+    }
+
+    class ChunkInfo {
+        + type : char
+        + offset : uint64_t
+        + recordSize : uint32_t
+        + capacity : uint32_t
+        + used : uint32_t
+        + toBytes() : vector<byte>
+        + fromBytes(data) : ChunkInfo
+    }
+
+    StudentRecord -up-|> UserRecord
+    TeacherRecord -up-|> UserRecord
+    BPlusTree --> BTreeLeafValue
+}
+
+namespace project_controller {
+
+    class FileManager {
+        - recordSize_ : size_t
+        + initialize(path) : bool
+        + readRecord(index) : optional<byte[]>
+        + appendRecord(data) : bool
+        + markDeleted(index) : bool
+        + setRecordSize(size) : void
+    }
+
+    class IndexValue {
+        + chunkIndex : uint32_t
+        + recordIndex : uint32_t
     }
 
     class IndexCtrl {
-        - map_ : unordered_map<string, size_t>
-        - idxPath_ : string
-        - depth_ : uint32_t
-        - rebuildIgnored_ : bool
-        + initialize(idxPath) : bool
-        + insert(name, id, offset) : bool
-        + lookup(name) : optional<size_t>
-        + remove(name) : bool
-        + shouldRebuild(cnt) : bool
-        + rebuild() : void
-        + ignoreRebuild() : void
+        - map_ : unordered_map<string, IndexEntry>
+        + initialize(path) : bool
+        + insert(key, chunkIdx, recIdx) : bool
+        + lookup(key) : optional<IndexValue>
+        + remove(key) : bool
+        + nextId(prefix) : uint32_t
         + save() : bool
         + load() : bool
-        - djb2(name) : uint32
-        - normalize(name) : string
     }
 
     class DataManager {
-        - fileMgr_ : FileManager
+        - dataFile_ : fstream
+        - chunks_[4] : ChunkInfo
+        - btree_ : BPlusTree
         - indexCtrl_ : IndexCtrl
-        - dataPath_ : string
-        - lastError_ : string
-        - rebuildIgnored_ : bool
-        + initialize(dataPath) : bool
-        + createStudent(name, uid, bday) : bool
+        + initialize(dataDir) : bool
+        + createStudent(...) : bool
+        + createTeacher(...) : bool
+        + createSubject(...) : bool
         + readStudent(id) : optional<StudentRecord>
-        + searchByName(name) : optional<StudentRecord>
-        + deleteStudent(id) : bool
-        + listAll() : vector<StudentRecord>
-        + getLastError() : string
-        + needsRebuild() : bool
-        + triggerRebuild() : void
-        + ignoreRebuildForSession() : void
-        + getNextDisplayId() : int32_t
-        + getActiveCount() : uint32_t
-        - rebuildIndex() : void
-        - scanActive() : vector<pair<size_t, StudentRecord>>
+        + readTeacher(id) : optional<TeacherRecord>
+        + readSubject(id) : optional<SubjectRecord>
+        + listAllStudents() : vector<StudentRecord>
+        + listAllTeachers() : vector<TeacherRecord>
+        + listAllSubjects() : vector<SubjectRecord>
+        + enrollStudent(sid, bid, tid, sem) : bool
+        + getEnrollmentsByStudent(sid) : vector<BTreeLeafValue>
+        + getEnrollmentsBySubject(bid) : vector<BTreeLeafValue>
+        + unenroll(sid, bid) : bool
+        + updateGrade(sid, bid, grade) : bool
+        - reallocateChunk(ci) : bool
+        - computeChunkOffsets() : void
     }
 
-    FileManager *-- StudentRecord : contem
-    DataManager o-- FileManager : usa
-    DataManager o-- IndexCtrl : usa
-    DataManager --> StudentRecord : retorna
-
+    DataManager --> BPlusTree
+    DataManager --> IndexCtrl
+    DataManager --> FileManager
+    DataManager --> ChunkInfo
+    DataManager --> FileHeader
 }
 
 @enduml

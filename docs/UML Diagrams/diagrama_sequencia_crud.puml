@@ -1,79 +1,106 @@
 @startuml diagrama_sequencia_crud
-' Diagrama de Sequencia - Operacao CRUD completa
-
 skinparam backgroundColor #FFFFFF
-skinparam defaultFontSize 13
+skinparam defaultFontSize 12
 
-title Diagrama de Sequencia - Cadastrar e Listar Estudantes
+title Diagrama de Sequencia - Operacoes CRUD
 
 actor Usuario as U
 participant "router.lua" as R
 participant "StudentCreate.lua" as SC
-participant "StudentList.lua" as SL
+participant "TeacherCreate.lua" as TC
+participant "SubjectCreate.lua" as SBC
+participant "EnrollmentList.lua" as EL
 participant "DataManager" as DM
 participant "FileManager" as FM
 participant "IndexCtrl" as IX
-database "students.dat" as DAT
-database "students.idx" as IDX
+participant "BPlusTree" as BT
+database "records.dat" as DAT
+database "records.idx" as IDX
 
-== Cadastro de Estudante ==
+== Cadastro de Aluno ==
 
-U -> R : seleciona "Cadastrar"
-R -> SC : render()
-SC -> U : exibe formulario (nome, data)
-U -> SC : preenche e clica "Cadastrar"
-SC -> DM : createStudent(name, userId, birthDate)
-DM -> FM : countActive()
-FM -> DAT : varre registros ativos
-FM --> DM : retorna N
-DM -> DM : id = N + 1
-DM -> FM : appendRecord(bytes)
-FM -> DAT : grava 67 bytes no final
-FM --> DM : sucesso
-DM -> IX : insert(name, id, offset)
-IX -> IX : normalize(name)
-IX -> IX : map[normalized] = offset
-IX --> DM : sucesso
+U -> SC : preenche formulario
+SC -> DM : createStudent(name, email, cpf, birthDate, course, year)
+DM -> IX : nextId("STU:")
+IX --> DM : 1
+DM -> DM : StudentRecord::toBytes()
+DM -> DAT : appendToChunk('S', bytes)
+DAT --> DM : index da gravacao
+DM -> IX : insert("STU:1", chunk, index)
+DM -> IX : insert("NM:nome", chunk, index)
+DM -> IX : save()
 DM --> SC : true
-SC -> U : mensagem de sucesso
+SC -> U : sucesso
 
-== Listagem de Estudantes ==
+== Cadastro de Professor ==
 
-U -> R : seleciona "Listar"
-R -> SL : render()
-SL -> DM : listAll()
-DM -> FM : countTotal()
-FM --> DM : total
-loop para cada registro
-    DM -> FM : isDeleted(i)
-    alt registro ativo
-        DM -> FM : readRecord(i)
-        FM -> DAT : le 67 bytes
-        FM --> DM : buffer
-        DM -> DM : StudentRecord::fromBytes()
-    else registro deletado
-        DM -> DM : ignora
-    end
-end
-DM -> DM : recalcula IDs dinamicos
-DM --> SL : vector<StudentRecord>
-SL -> U : exibe lista vertical
+U -> TC : preenche formulario
+TC -> DM : createTeacher(name, email, cpf, dept, spec, hireDate)
+DM -> IX : nextId("TCH:")
+DM -> DAT : appendToChunk('T', bytes)
+DM -> IX : insert("TCH:1", chunk, index)
+DM -> IX : save()
+DM --> TC : true
 
-== Soft Delete ==
+== Cadastro de Disciplina ==
 
-U -> SL : clica "X" em estudante
-SL -> DM : deleteStudent(id)
-DM -> FM : scanActive()
-FM --> DM : registros ativos
-loop encontra registro com ID
-    DM -> FM : markDeleted(offset)
-    FM -> DAT : sobrescreve byte status com '*'
-    FM --> DM : sucesso
-    DM -> IX : remove(name)
-    IX -> IX : map.erase(normalized)
-    IX --> DM : sucesso
-end
-DM --> SL : true
-SL -> U : estudante removido da lista
+U -> SBC : preenche formulario
+SBC -> DM : createSubject(name, code, credits, teacherId)
+DM -> IX : nextId("SUB:")
+DM -> DAT : appendToChunk('B', bytes)
+DM -> IX : insert("SUB:1", chunk, index)
+DM --> SBC : true
 
+== Matricula (B+ Tree) ==
+
+U -> EL : studentId, subjectId, teacherId, semester
+EL -> DM : enrollStudent(1, 1, 1, "2026-1")
+DM -> BT : search("ENR:STU:0001:SUB:0001")
+BT --> DM : null (nao existe)
+DM -> BT : insert("ENR:STU:0001:SUB:0001", value)
+BT -> DAT : salva pagina alterada
+BT --> DM : true
+DM --> EL : true
+EL -> U : sucesso
+
+== Consultar Matriculas por Aluno ==
+
+U -> EL : ID do aluno
+EL -> DM : getEnrollmentsByStudent(1)
+DM -> BT : searchRange("ENR:STU:0001:")
+BT -> DAT : percorre folhas
+BT --> DM : [entry1, entry2, ...]
+DM --> EL : vetor de matriculas
+EL -> U : exibe lista
+
+== Atualizar Nota ==
+
+U -> EL : studentId, subjectId, grade
+EL -> DM : updateGrade(1, 1, 8.5)
+DM -> BT : search(key)
+BT --> DM : oldValue
+DM -> BT : erase(key)
+DM -> BT : insert(key, updatedValue)
+DM --> EL : true
+EL -> U : nota atualizada
+
+== Leitura por ID (qualquer entidade) ==
+
+U -> SC : consulta por ID
+SC -> DM : readStudent(1)
+DM -> IX : lookup("STU:1")
+IX --> DM : (chunk=0, index=42)
+DM -> DAT : readFromChunk(0, 42)
+DAT --> DM : bytes
+DM -> DM : StudentRecord::fromBytes()
+DM --> SC : StudentRecord
+
+== Reallocacao de Chunk ==
+
+DM -> DM : used >= capacity
+DM -> DM : reallocateChunk(ci)
+DM -> DAT : cria novo layout
+note right: dobra capacity,\nreescreve arquivo
+DM -> BT : atualiza chunkOffset
+DM -> IX : indices permanecem validos
 @enduml

@@ -36,7 +36,9 @@ set(LOCAL_LIBS_DIR "${CMAKE_SOURCE_DIR}/libs")
 # hello_imgui options (MUST be set BEFORE FetchContent_MakeAvailable)
 set(HELLOIMGUI_BUILD_AUTOMATION_TEST OFF)
 set(HELLOIMGUI_ADD_APP_WITH_INSTALL OFF)
+set(HELLOIMGUI_USE_FREETYPE OFF)
 set(HELLOIMGUI_USE_FREETYPE_PLUTOSVG OFF)
+set(HELLOIMGUI_USE_FREETYPE_LUNASVG OFF)
 set(HELLOIMGUI_USE_SDL2 OFF)
 set(HELLOIMGUI_USE_GLFW3 ON)
 set(HELLOIMGUI_HAS_VULKAN OFF)
@@ -103,6 +105,7 @@ set(APP_SOURCES
 	${CMAKE_SOURCE_DIR}/src/main.cpp
 	${CMAKE_SOURCE_DIR}/src/view/bindings/ImguiBindings.cpp
 	${CMAKE_SOURCE_DIR}/src/model/Record.cpp
+	${CMAKE_SOURCE_DIR}/src/model/BPlusTree.cpp
 	${CMAKE_SOURCE_DIR}/src/controller/FileManager.cpp
 	${CMAKE_SOURCE_DIR}/src/controller/IndexCtrl.cpp
 	${CMAKE_SOURCE_DIR}/src/controller/DataManager.cpp
@@ -130,6 +133,7 @@ target_link_libraries(TP_AEDSIII PRIVATE
 set(TEST_SOURCES
 	${CMAKE_SOURCE_DIR}/tests/test_main.cpp
 	${CMAKE_SOURCE_DIR}/src/model/Record.cpp
+	${CMAKE_SOURCE_DIR}/src/model/BPlusTree.cpp
 	${CMAKE_SOURCE_DIR}/src/controller/FileManager.cpp
 	${CMAKE_SOURCE_DIR}/src/controller/IndexCtrl.cpp
 	${CMAKE_SOURCE_DIR}/src/controller/DataManager.cpp

@@ -1,78 +1,76 @@
 @startuml arquitetura_sistema
-' Diagrama de Arquitetura do Sistema - GUI com Lua DSL (MVC Flat)
-
 skinparam backgroundColor #FFFFFF
-skinparam defaultFontSize 14
+skinparam defaultFontSize 13
 
-title Arquitetura do Sistema - TP AEDS III\n(Namespace Flat: project_utility, project_model, project_controller, project_view)
+title Arquitetura do Sistema - TP AEDS III
 
-package "Camada GUI (C++ / HelloImGui)" {
-    [main.cpp\n(Entry Point)] as main
-    [HelloImGui\nRunnerParams] as hello
-    [ImguiBindings.cpp\n(project_view)] as bindings
+package "GUI (C++ / HelloImGui)" {
+    [main.cpp] as main
+    [HelloImGui] as hello
+    [ImguiBindings] as bindings
 }
 
-package "Camada Lua DSL (Views)" {
-    [router.lua\n(Navegacao)] as router
-    [common.lua\n(4-cores theme)] as common
+package "Lua Views" {
+    [router.lua] as router
+    [common.lua] as common
     [MainMenu.lua] as menu
-    [StudentCreate.lua] as create
-    [StudentList.lua] as list
-    [StudentDetail.lua] as detail
+    [StudentViews] as stu
+    [TeacherViews] as tch
+    [SubjectViews] as sub
+    [EnrollmentViews] as enr
 }
 
-package "project_utility (Constantes/Enums)" {
-    [Constants.hpp\n(NAME_LEN, etc)] as const
-    [Enums.hpp\n(RecStatus, ViewId)] as enums
+package "project_utility" {
+    [Constants.hpp] as const
+    [Enums.hpp] as enums
 }
 
-package "project_model (Dados)" {
-    [Record.hpp\n(StudentRecord)] as model
-    [RecordSerializer] as serializer
+package "project_model" {
+    [Record.hpp] as model
+    [BPlusTree.hpp] as btree
 }
 
-package "project_controller (Negocio)" {
-    [DataManager\n(CRUD Controller)] as dm
-    [FileManager\n(I/O Binario)] as fm
-    [IndexCtrl\n(Hash Index)] as idx
+package "project_controller" {
+    [DataManager] as dm
+    [FileManager] as fm
+    [IndexCtrl] as idx
 }
 
-database "students.dat\n(67 bytes/registro)" as dat
-database "students.idx\n(indice hash)" as idxfile
+database "records.dat\n(Header + Chunks)" as dat
+database "records.idx\n(Hash Index)" as idxfile
 
-' Fluxo principal
-main --> hello : configura Runner
-main --> bindings : LoadImguiBindings()
-main --> dm : bind via luaaa
-hello --> router : RenderUI() callback
-bindings --> router : imgui.* functions
-dm --> bindings : exposto via LuaModule
+main --> hello
+main --> bindings
+main --> dm
+hello --> router
+bindings --> router
+dm --> bindings
 
-' Lua views
-router --> common : require()
-router --> menu : render()
-router --> create : render()
-router --> list : render()
-router --> detail : render()
+router --> menu
+router --> stu
+router --> tch
+router --> sub
+router --> enr
+router --> common
 
-' CRUD
-menu --> dm : getDataManager()
-create --> dm : createStudent()
-list --> dm : listAll()\ndeleteStudent()
-detail --> dm : searchByName()
+menu --> dm
+stu --> dm
+tch --> dm
+sub --> dm
+enr --> dm
 
-' Dependencies
-dm --> fm : initialize()\nreadRecord()\nappendRecord()\nmarkDeleted()
-dm --> idx : insert()\nlookup()\nremove()\nrebuild()
+dm --> fm
+dm --> idx
+dm --> btree
 
-' Utility/Model dependencies
-fm --> model : StudentRecord\ntoBytes()/fromBytes()
-model --> const : NAME_LEN, OFFSET_*
-model --> enums : RecStatus (using enum)
-idx --> const : IDX_MAGIC, REBUILD_MODULO
+fm --> model
+model --> const
+model --> enums
+idx --> const
+btree --> model
 
-' Persistencia
-fm --> dat : leitura/escrita\nbinaria direta
-idx --> idxfile : save()/load()\nhash DJB2
+fm --> dat
+idx --> idxfile
+btree --> dat
 
 @enduml

@@ -1,4 +1,4 @@
--- router.scripts
+-- router.lua
 -- Controlador de navegacao - carrega views e renderiza UI principal
 
 local common = require("common")
@@ -6,17 +6,20 @@ local MainMenu = require("MainMenu")
 local StudentCreate = require("StudentCreate")
 local StudentList = require("StudentList")
 local StudentDetail = require("StudentDetail")
+local TeacherCreate = require("TeacherCreate")
+local TeacherList = require("TeacherList")
+local SubjectCreate = require("SubjectCreate")
+local SubjectList = require("SubjectList")
+local EnrollmentList = require("EnrollmentList")
 
--- Estado da view atual
 local currentView = "menu"
+local errorMsg = ""
 
--- Renderiza conteudo principal conforme view selecionada
 local function renderContent()
 	imgui.SetNextWindowPos(160, 0, "Always")
 	imgui.SetNextWindowSize(640, 600, "Always")
 
 	if imgui.Begin("Conteudo", nil, {"NoResize"}) then
-		-- Fundo branco
 		imgui.PushStyleColor(common.COL.WindowBg, common.COLORS.White)
 		imgui.PushStyleColor(common.COL.Text, common.COLORS.Black)
 
@@ -28,6 +31,16 @@ local function renderContent()
 			StudentList.render()
 		elseif currentView == "search" then
 			StudentDetail.render()
+		elseif currentView == "tcreate" then
+			TeacherCreate.render()
+		elseif currentView == "tlist" then
+			TeacherList.render()
+		elseif currentView == "screate" then
+			SubjectCreate.render()
+		elseif currentView == "slist" then
+			SubjectList.render()
+		elseif currentView == "elist" then
+			EnrollmentList.render()
 		end
 
 		imgui.PopStyleColor(2)
@@ -35,42 +48,7 @@ local function renderContent()
 	end
 end
 
--- Verifica se precisa reconstruir indice
-local function checkRebuild()
-	local dm = getDataManager()
-	if not dm then return end
-
-	if dm:needsRebuild() then
-		imgui.OpenPopup("Rebuild")
-	end
-
-	if imgui.BeginPopupModal("Rebuild", nil, {"NoResize"}) then
-		imgui.PushStyleColor(common.COL.Text, common.COLORS.White)
-		imgui.Text("10 registros ativos. Deseja reconstruir o indice?")
-		imgui.Spacing()
-		imgui.SameLine()
-		if common.button("Sim", common.COLORS.Green, 80, 0) then
-			dm:triggerRebuild()
-			imgui.CloseCurrentPopup()
-		end
-		imgui.SameLine()
-		if common.button("Ignorar", common.COLORS.Red, 80, 0) then
-			dm:ignoreRebuildForSession()
-			imgui.CloseCurrentPopup()
-		end
-		imgui.PopStyleColor()
-		imgui.EndPopup()
-	end
-end
-
--- Funcao global chamada pelo C++ a cada frame
 function RenderUI()
-	-- Sidebar
 	currentView = common.sidebar(currentView)
-
-	-- Conteudo principal
 	renderContent()
-
-	-- Verificacao de rebuild
-	checkRebuild()
 end
