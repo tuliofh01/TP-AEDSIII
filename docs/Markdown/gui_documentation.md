@@ -1,7 +1,7 @@
 # Documentação da Interface Gráfica (GUI)
 
 > Sistema de Matrícula Acadêmica - Documentação Técnica da GUI
-> Last Updated: 2026-04-27
+> Last Updated: 2026-05-24
 
 ---
 
@@ -24,19 +24,25 @@ A interface gráfica do sistema é construída utilizando uma combinação de te
 | **Wrapper GUI** | hello_imgui | Abstração de janela e loop principal |
 | **Linguagem de_script** | Lua 5.x | DSL para definições de UI |
 | **Bindings C++/Lua** | ruaaa | Integração C++/Lua |
-| **Bindings ImGui** | imgui_lua_bindings | API ImGui disponível em Lua |
+| **Bindings ImGui** | ImguiBindings.cpp | API ImGui disponível em Lua (minimal, custom) |
 
 ---
 
 ## 2. Estrutura de Arquivos da GUI
 
 ```
-src/views/
-├── router.lua       # Controlador principal de navegação
-├── MainMenu.lua   # Menu principal do sistema
-├── StudentView.lua   # Gerenciamento de estudantes
-├── CourseView.lua    # Gerenciamento de disciplinas
-└── common.lua    # Componentes UI compartilhados
+src/view/scripts/views/
+├── router.lua            # Controlador principal de navegação
+├── common.lua            # Sidebar, navegação, helpers
+├── MainMenu.lua          # Menu principal com stats
+├── StudentCreate.lua     # Cadastro de aluno (nome, email, cpf, data, curso, ano)
+├── StudentList.lua       # Listar alunos com exclusão
+├── StudentDetail.lua     # Consultar aluno por ID
+├── TeacherCreate.lua     # Cadastro de professor (nome, email, cpf, depto, especializacao)
+├── TeacherList.lua       # Listar professores com exclusão
+├── SubjectCreate.lua     # Cadastro de disciplina (nome, codigo, creditos, professor)
+├── SubjectList.lua       # Listar disciplinas com exclusão
+└── EnrollmentList.lua    # Gerenciar matrículas (matricular, nota, consultas)
 ```
 
 ### 2.1 router.lua
