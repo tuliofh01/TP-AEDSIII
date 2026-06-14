@@ -7,100 +7,136 @@ title Diagrama de Sequencia - Operacoes CRUD
 actor Usuario as U
 participant "router.lua" as R
 participant "StudentCreate.lua" as SC
+participant "StudentList.lua" as SL
 participant "TeacherCreate.lua" as TC
 participant "SubjectCreate.lua" as SBC
 participant "EnrollmentList.lua" as EL
 participant "DataManager" as DM
-participant "FileManager" as FM
 participant "IndexCtrl" as IX
 participant "BPlusTree" as BT
 database "records.dat" as DAT
 database "records.idx" as IDX
 
-== Cadastro de Aluno ==
+== Login ==
+
+U -> R : CPF + senha
+R -> DM : login(cpf, password)
+DM -> IX : lookup("CPF:cpf:STU")
+IX --> DM : (chunk, index) ou null
+alt Aluno encontrado
+    DM -> DAT : readFromChunk(S, index)
+    DAT --> DM : StudentRecord
+    DM -> DM : verifica senha
+    DM --> R : LoginResult{userId, 'S', name}
+else Professor encontrado
+    DM -> IX : lookup("CPF:cpf:TCH")
+    DM -> DAT : readFromChunk(T, index)
+    DM --> R : LoginResult{userId, 'T', name}
+else Nao encontrado
+    DM --> R : null
+end
+
+== Cadastro de Aluno (com validacao CPF) ==
 
 U -> SC : preenche formulario
 SC -> DM : createStudent(name, email, cpf, birthDate, course, year)
+DM -> IX : lookup("CPF:cpf:STU")
+IX --> DM : null (cpf unico)
 DM -> IX : nextId("STU:")
 IX --> DM : 1
-DM -> DM : StudentRecord::toBytes()
+DM -> DM : serializeRecord(StudentRecord)
 DM -> DAT : appendToChunk('S', bytes)
 DAT --> DM : index da gravacao
 DM -> IX : insert("STU:1", chunk, index)
 DM -> IX : insert("NM:nome", chunk, index)
+DM -> IX : insert("CPF:cpf:STU", chunk, index)
 DM -> IX : save()
 DM --> SC : true
 SC -> U : sucesso
 
-== Cadastro de Professor ==
-
-U -> TC : preenche formulario
-TC -> DM : createTeacher(name, email, cpf, dept, spec, hireDate)
-DM -> IX : nextId("TCH:")
-DM -> DAT : appendToChunk('T', bytes)
-DM -> IX : insert("TCH:1", chunk, index)
-DM -> IX : save()
-DM --> TC : true
-
-== Cadastro de Disciplina ==
+== Cadastro de Disciplina (com integridade referencial) ==
 
 U -> SBC : preenche formulario
 SBC -> DM : createSubject(name, code, credits, teacherId)
-DM -> IX : nextId("SUB:")
-DM -> DAT : appendToChunk('B', bytes)
-DM -> IX : insert("SUB:1", chunk, index)
-DM --> SBC : true
+DM -> IX : lookup("TCH:teacherId")
+IX --> DM : (chunk, index) ou null
+alt Professor existe
+    DM -> IX : nextId("SUB:")
+    DM -> DAT : appendToChunk('B', bytes)
+    DM -> IX : insert("SUB:1", chunk, index)
+    DM --> SBC : true
+else Professor nao existe
+    DM --> SBC : false (erro)
+end
 
-== Matricula (B+ Tree) ==
+== Matricula (B+ Tree com validacao) ==
 
 U -> EL : studentId, subjectId, teacherId, semester
-EL -> DM : enrollStudent(1, 1, 1, "2026-1")
-DM -> BT : search("ENR:STU:0001:SUB:0001")
-BT --> DM : null (nao existe)
-DM -> BT : insert("ENR:STU:0001:SUB:0001", value)
+EL -> DM : enrollStudent(sid, bid, tid, sem)
+DM -> IX : lookup("STU:sid")
+IX --> DM : (chunk, index)
+DM -> IX : lookup("SUB:bid")
+IX --> DM : (chunk, index)
+DM -> IX : lookup("TCH:tid")
+IX --> DM : (chunk, index)
+DM -> BT : search("ENR:STU:padId:SUB:padId")
+BT --> DM : null (nao existe, insere)
+DM -> BT : insert("ENR:STU:padId:SUB:padId", value)
 BT -> DAT : salva pagina alterada
 BT --> DM : true
 DM --> EL : true
 EL -> U : sucesso
 
+== Editar Aluno (inline na lista) ==
+
+U -> SL : clica "Editar" no registro
+SL -> DM : updateStudent(id, updatedRecord)
+DM -> IX : lookup("STU:id")
+IX --> DM : (chunk, index)
+DM -> DAT : writeToChunk(S, index, bytes)
+DM --> SL : true
+SL -> U : exibe dados atualizados
+
 == Consultar Matriculas por Aluno ==
 
 U -> EL : ID do aluno
-EL -> DM : getEnrollmentsByStudent(1)
-DM -> BT : searchRange("ENR:STU:0001:")
-BT -> DAT : percorre folhas
+EL -> DM : getEnrollmentsByStudent(sid)
+DM -> BT : searchRange("ENR:STU:padId:")
+BT -> DAT : percorre folhas encadeadas
 BT --> DM : [entry1, entry2, ...]
-DM --> EL : vetor de matriculas
+DM --> EL : vetor de Enrollment
 EL -> U : exibe lista
 
 == Atualizar Nota ==
 
-U -> EL : studentId, subjectId, grade
-EL -> DM : updateGrade(1, 1, 8.5)
+U -> EL : studentId, subjectId, grade (0-100)
+EL -> DM : updateGrade(sid, bid, grade)
 DM -> BT : search(key)
-BT --> DM : oldValue
+BT --> DM : oldValue (existe)
 DM -> BT : erase(key)
 DM -> BT : insert(key, updatedValue)
 DM --> EL : true
 EL -> U : nota atualizada
 
-== Leitura por ID (qualquer entidade) ==
+== Leitura por ID ==
 
 U -> SC : consulta por ID
 SC -> DM : readStudent(1)
 DM -> IX : lookup("STU:1")
 IX --> DM : (chunk=0, index=42)
-DM -> DAT : readFromChunk(0, 42)
+DM -> DAT : readFromChunk(S, 42)
 DAT --> DM : bytes
-DM -> DM : StudentRecord::fromBytes()
-DM --> SC : StudentRecord
+DM -> DM : deserializeRecord<StudentRecord>(bytes)
+DM -> DM : Student::fromBytes() + isActive()
+DM --> SC : optional<Student>
 
 == Reallocacao de Chunk ==
 
 DM -> DM : used >= capacity
 DM -> DM : reallocateChunk(ci)
-DM -> DAT : cria novo layout
-note right: dobra capacity,\nreescreve arquivo
-DM -> BT : atualiza chunkOffset
+DM -> DAT : le todos os dados para memoria
+DM -> DAT : dobra capacity, reescreve arquivo
+note right: chunks movidos,\nindices permanecem validos\n(apontam para recordIndex,\nnao para offset)
+DM -> BT : reinitialize com novo chunkOffset
 DM -> IX : indices permanecem validos
 @enduml

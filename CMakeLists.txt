@@ -24,13 +24,35 @@ message(STATUS "Building for platform: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "Using generator: ${CMAKE_GENERATOR}")
 
 # ======================
-# Dependencies - libs/ folder (pre-cloned repos, no internet download)
+# Dependencies — downloads from GitHub if libs/ not present
 # ======================
+# Strategy:
+#   1. If libs/<dep>/ exists, use it as the local source (FETCHCONTENT_SOURCE_DIR_<NAME>)
+#   2. If not, FetchContent downloads from the GIT_REPOSITORY URL
+# This makes the project self-bootstrapping on any machine.
 set(LOCAL_LIBS_DIR "${CMAKE_SOURCE_DIR}/libs")
-set(FETCHCONTENT_SOURCE_DIR_HELLO_IMGUI ${LOCAL_LIBS_DIR}/hello_imgui)
-set(FETCHCONTENT_SOURCE_DIR_LUA ${LOCAL_LIBS_DIR}/lua)
-set(FETCHCONTENT_SOURCE_DIR_LUAAA ${LOCAL_LIBS_DIR}/luaaa)
 set(FETCHCONTENT_QUIET FALSE)
+
+if(EXISTS ${LOCAL_LIBS_DIR}/hello_imgui)
+	set(FETCHCONTENT_SOURCE_DIR_HELLO_IMGUI ${LOCAL_LIBS_DIR}/hello_imgui)
+	message(STATUS "Using local hello_imgui: ${LOCAL_LIBS_DIR}/hello_imgui")
+else()
+	message(STATUS "Downloading hello_imgui from GitHub")
+endif()
+
+if(EXISTS ${LOCAL_LIBS_DIR}/lua)
+	set(FETCHCONTENT_SOURCE_DIR_LUA ${LOCAL_LIBS_DIR}/lua)
+	message(STATUS "Using local lua: ${LOCAL_LIBS_DIR}/lua")
+else()
+	message(STATUS "Downloading lua from GitHub")
+endif()
+
+if(EXISTS ${LOCAL_LIBS_DIR}/luaaa)
+	set(FETCHCONTENT_SOURCE_DIR_LUAAA ${LOCAL_LIBS_DIR}/luaaa)
+	message(STATUS "Using local luaaa: ${LOCAL_LIBS_DIR}/luaaa")
+else()
+	message(STATUS "Downloading luaaa from GitHub")
+endif()
 
 # hello_imgui options
 set(HELLOIMGUI_BUILD_AUTOMATION_TEST OFF)
@@ -46,21 +68,18 @@ set(HELLOIMGUI_HAS_OPENGL3 ON)
 FetchContent_Declare(hello_imgui
 	GIT_REPOSITORY https://github.com/pthom/hello_imgui.git
 	GIT_TAG        v1.5.0
-	SOURCE_DIR     ${LOCAL_LIBS_DIR}/hello_imgui
 )
 FetchContent_MakeAvailable(hello_imgui)
 
 FetchContent_Declare(lua
 	GIT_REPOSITORY https://github.com/marovira/lua.git
 	GIT_TAG        master
-	SOURCE_DIR     ${LOCAL_LIBS_DIR}/lua
 )
 FetchContent_MakeAvailable(lua)
 
 FetchContent_Declare(luaaa
 	GIT_REPOSITORY https://github.com/gengyong/luaaa.git
 	GIT_TAG        master
-	SOURCE_DIR     ${LOCAL_LIBS_DIR}/luaaa
 )
 FetchContent_MakeAvailable(luaaa)
 

@@ -1,6 +1,7 @@
 #include <iostream>
 #include <filesystem>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <vector>
 #include <utility>
@@ -25,6 +26,7 @@ namespace luaaa {
 			lua_pushstring(L, "name"); lua_pushstring(L, rec.nameStr().c_str()); lua_settable(L, -3);
 			lua_pushstring(L, "email"); lua_pushstring(L, rec.emailStr().c_str()); lua_settable(L, -3);
 			lua_pushstring(L, "cpf"); lua_pushstring(L, rec.cpfStr().c_str()); lua_settable(L, -3);
+			lua_pushstring(L, "password"); lua_pushinteger(L, rec.password); lua_settable(L, -3);
 			lua_pushstring(L, "birthDate"); lua_pushinteger(L, rec.birthDate); lua_settable(L, -3);
 			lua_pushstring(L, "course"); lua_pushstring(L, rec.courseStr().c_str()); lua_settable(L, -3);
 			lua_pushstring(L, "enrollmentYear"); lua_pushinteger(L, rec.enrollmentYear); lua_settable(L, -3);
@@ -70,6 +72,7 @@ namespace luaaa {
 			lua_pushstring(L, "name"); lua_pushstring(L, rec.nameStr().c_str()); lua_settable(L, -3);
 			lua_pushstring(L, "email"); lua_pushstring(L, rec.emailStr().c_str()); lua_settable(L, -3);
 			lua_pushstring(L, "cpf"); lua_pushstring(L, rec.cpfStr().c_str()); lua_settable(L, -3);
+			lua_pushstring(L, "password"); lua_pushinteger(L, rec.password); lua_settable(L, -3);
 			lua_pushstring(L, "department"); lua_pushstring(L, rec.deptStr().c_str()); lua_settable(L, -3);
 			lua_pushstring(L, "specialization"); lua_pushstring(L, rec.specStr().c_str()); lua_settable(L, -3);
 			lua_pushstring(L, "hireDate"); lua_pushinteger(L, rec.hireDate); lua_settable(L, -3);
@@ -229,7 +232,7 @@ int main(int argc, char** argv) {
 	LoadImguiBindings();
 
 	using DM = project_controller::DataManager;
-	auto mgr = project_controller::DataManager{};
+	auto dataManager = project_controller::DataManager{};
 
 	// Register DataManager methods in a Lua module table (LuaModule).
 	// LuaModule uses NonMemberFunctionCaller (skip=0), avoiding the
@@ -247,6 +250,26 @@ int main(int argc, char** argv) {
 	dmMethods.fun("readStudent", [](DM* dm, int32_t id) { return dm->readStudent(id); });
 	dmMethods.fun("deleteStudent", [](DM* dm, int32_t id) { return dm->deleteStudent(id); });
 	dmMethods.fun("listAllStudents", [](DM* dm) { return dm->listAllStudents(); });
+	dmMethods.fun("updateStudent", [](DM* dm, int32_t id, const std::string& name,
+		const std::string& email, const std::string& cpf, int password,
+		int birthDate, const std::string& courseName, int enrollmentYear) {
+		project_model::StudentRecord record;
+		record.userId = id;
+		record.type = 'S';
+		record.status = 'A';
+		record.password = static_cast<uint16_t>(password);
+		std::strncpy(record.name, name.c_str(), sizeof(record.name) - 1);
+		record.name[sizeof(record.name) - 1] = '\0';
+		std::strncpy(record.email, email.c_str(), sizeof(record.email) - 1);
+		record.email[sizeof(record.email) - 1] = '\0';
+		std::strncpy(record.cpf, cpf.c_str(), sizeof(record.cpf) - 1);
+		record.cpf[sizeof(record.cpf) - 1] = '\0';
+		record.birthDate = static_cast<uint32_t>(birthDate);
+		std::strncpy(record.courseName, courseName.c_str(), sizeof(record.courseName) - 1);
+		record.courseName[sizeof(record.courseName) - 1] = '\0';
+		record.enrollmentYear = enrollmentYear;
+		return dm->updateStudent(id, record);
+	});
 	dmMethods.fun("getNextStudentId", [](DM* dm) { return dm->getNextStudentId(); });
 
 	dmMethods.fun("createTeacher", [](DM* dm, const std::string& name, const std::string& email,
@@ -258,6 +281,27 @@ int main(int argc, char** argv) {
 	dmMethods.fun("readTeacher", [](DM* dm, int32_t id) { return dm->readTeacher(id); });
 	dmMethods.fun("deleteTeacher", [](DM* dm, int32_t id) { return dm->deleteTeacher(id); });
 	dmMethods.fun("listAllTeachers", [](DM* dm) { return dm->listAllTeachers(); });
+	dmMethods.fun("updateTeacher", [](DM* dm, int32_t id, const std::string& name,
+		const std::string& email, const std::string& cpf, int password,
+		const std::string& department, const std::string& specialization, int hireDate) {
+		project_model::TeacherRecord record;
+		record.userId = id;
+		record.type = 'T';
+		record.status = 'A';
+		record.password = static_cast<uint16_t>(password);
+		std::strncpy(record.name, name.c_str(), sizeof(record.name) - 1);
+		record.name[sizeof(record.name) - 1] = '\0';
+		std::strncpy(record.email, email.c_str(), sizeof(record.email) - 1);
+		record.email[sizeof(record.email) - 1] = '\0';
+		std::strncpy(record.cpf, cpf.c_str(), sizeof(record.cpf) - 1);
+		record.cpf[sizeof(record.cpf) - 1] = '\0';
+		std::strncpy(record.department, department.c_str(), sizeof(record.department) - 1);
+		record.department[sizeof(record.department) - 1] = '\0';
+		std::strncpy(record.specialization, specialization.c_str(), sizeof(record.specialization) - 1);
+		record.specialization[sizeof(record.specialization) - 1] = '\0';
+		record.hireDate = static_cast<uint32_t>(hireDate);
+		return dm->updateTeacher(id, record);
+	});
 	dmMethods.fun("getNextTeacherId", [](DM* dm) { return dm->getNextTeacherId(); });
 
 	dmMethods.fun("createSubject", [](DM* dm, const std::string& name, const std::string& code,
@@ -267,6 +311,20 @@ int main(int argc, char** argv) {
 	dmMethods.fun("readSubject", [](DM* dm, int32_t id) { return dm->readSubject(id); });
 	dmMethods.fun("deleteSubject", [](DM* dm, int32_t id) { return dm->deleteSubject(id); });
 	dmMethods.fun("listAllSubjects", [](DM* dm) { return dm->listAllSubjects(); });
+	dmMethods.fun("updateSubject", [](DM* dm, int32_t id, const std::string& name,
+		const std::string& code, int32_t credits, int32_t teacherId) {
+		project_model::SubjectRecord record;
+		record.subjectId = id;
+		record.type = 'B';
+		record.status = 'A';
+		std::strncpy(record.name, name.c_str(), sizeof(record.name) - 1);
+		record.name[sizeof(record.name) - 1] = '\0';
+		std::strncpy(record.code, code.c_str(), sizeof(record.code) - 1);
+		record.code[sizeof(record.code) - 1] = '\0';
+		record.credits = credits;
+		record.teacherId = teacherId;
+		return dm->updateSubject(id, record);
+	});
 	dmMethods.fun("getNextSubjectId", [](DM* dm) { return dm->getNextSubjectId(); });
 
 	dmMethods.fun("enrollStudent", [](DM* dm, int32_t studentId, int32_t subjectId,
@@ -299,7 +357,7 @@ int main(int argc, char** argv) {
 	// Push DataManager as a Lua light userdata with a metatable whose __index
 	// is the dm_methods module table. Lua method calls (dm:method()) go through
 	// __index → NonMemberFunctionCaller (skip=0), so DM* is at stack position 1.
-	lua_pushlightuserdata(L, &mgr);
+	lua_pushlightuserdata(L, &dataManager);
 	lua_newtable(L);                                                         // metatable
 	lua_getglobal(L, "dm_methods");                                          // push module table
 	lua_setfield(L, -2, "__index");                                          // metatable.__index = dm_methods
@@ -333,10 +391,10 @@ int main(int argc, char** argv) {
 	// Initialize data
 	auto dataDir = (std::filesystem::current_path() / "data").string();
 	std::filesystem::create_directories(dataDir);
-	std::ignore = mgr.initialize(dataDir);
+	std::ignore = dataManager.initialize(dataDir);
 
 	// Populate sample data for fresh or incomplete databases
-	if (mgr.getActiveCount('T') == 0 || mgr.getActiveCount('B') == 0) {
+	if (dataManager.getActiveCount('T') == 0 || dataManager.getActiveCount('B') == 0) {
 		lua_getglobal(L, "require");
 		lua_pushstring(L, "misc.populate_samples");
 		if (lua_pcall(L, 1, 1, 0) == LUA_OK) {

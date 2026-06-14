@@ -72,45 +72,45 @@ namespace project_controller {
 	// Serializes the index map to a binary file.
 	auto IndexCtrl::save() const -> bool {
 		using namespace project_utility;
-		std::ofstream f(idxPath_, std::ios::binary);
-		if (!f.is_open()) return false;
-		f.write(reinterpret_cast<const char*>(&IDX_MAGIC), sizeof(uint32_t));
-		f.write(reinterpret_cast<const char*>(&depth_), sizeof(uint32_t));
-		auto sz = static_cast<uint32_t>(map_.size());
-		f.write(reinterpret_cast<const char*>(&sz), sizeof(uint32_t));
+		std::ofstream outputFile(idxPath_, std::ios::binary);
+		if (!outputFile.is_open()) return false;
+		outputFile.write(reinterpret_cast<const char*>(&IDX_MAGIC), sizeof(uint32_t));
+		outputFile.write(reinterpret_cast<const char*>(&depth_), sizeof(uint32_t));
+		auto mapSize = static_cast<uint32_t>(map_.size());
+		outputFile.write(reinterpret_cast<const char*>(&mapSize), sizeof(uint32_t));
 		for (const auto& [key, entry] : map_) {
-			auto len = static_cast<uint32_t>(key.length());
-			f.write(reinterpret_cast<const char*>(&len), sizeof(uint32_t));
-			f.write(key.data(), len);
-			f.write(reinterpret_cast<const char*>(&entry.chunkIndex), sizeof(uint32_t));
-			f.write(reinterpret_cast<const char*>(&entry.recordIndex), sizeof(uint32_t));
+			auto keyLength = static_cast<uint32_t>(key.length());
+			outputFile.write(reinterpret_cast<const char*>(&keyLength), sizeof(uint32_t));
+			outputFile.write(key.data(), keyLength);
+			outputFile.write(reinterpret_cast<const char*>(&entry.chunkIndex), sizeof(uint32_t));
+			outputFile.write(reinterpret_cast<const char*>(&entry.recordIndex), sizeof(uint32_t));
 		}
-		return f.good();
+		return outputFile.good();
 	}
 
 	// Deserializes the index map from a binary file.
 	auto IndexCtrl::load() -> bool {
 		using namespace project_utility;
-		std::ifstream f(idxPath_, std::ios::binary);
-		if (!f.is_open()) return false;
+		std::ifstream inputFile(idxPath_, std::ios::binary);
+		if (!inputFile.is_open()) return false;
 		uint32_t magic;
-		f.read(reinterpret_cast<char*>(&magic), sizeof(uint32_t));
+		inputFile.read(reinterpret_cast<char*>(&magic), sizeof(uint32_t));
 		if (magic != IDX_MAGIC) return false;
-		f.read(reinterpret_cast<char*>(&depth_), sizeof(uint32_t));
-		uint32_t sz;
-		f.read(reinterpret_cast<char*>(&sz), sizeof(uint32_t));
+		inputFile.read(reinterpret_cast<char*>(&depth_), sizeof(uint32_t));
+		uint32_t mapSize;
+		inputFile.read(reinterpret_cast<char*>(&mapSize), sizeof(uint32_t));
 		map_.clear();
-		for (uint32_t i = 0; i < sz; ++i) {
-			uint32_t len;
-			f.read(reinterpret_cast<char*>(&len), sizeof(uint32_t));
-			std::string key(len, ' ');
-			f.read(key.data(), len);
+		for (uint32_t entryIndex = 0; entryIndex < mapSize; ++entryIndex) {
+			uint32_t keyLength;
+			inputFile.read(reinterpret_cast<char*>(&keyLength), sizeof(uint32_t));
+			std::string key(keyLength, ' ');
+			inputFile.read(key.data(), keyLength);
 			IndexEntry entry;
-			f.read(reinterpret_cast<char*>(&entry.chunkIndex), sizeof(uint32_t));
-			f.read(reinterpret_cast<char*>(&entry.recordIndex), sizeof(uint32_t));
+			inputFile.read(reinterpret_cast<char*>(&entry.chunkIndex), sizeof(uint32_t));
+			inputFile.read(reinterpret_cast<char*>(&entry.recordIndex), sizeof(uint32_t));
 			map_[key] = entry;
 		}
-		return f.good();
+		return inputFile.good();
 	}
 
 	// Resets the index to its initial empty state.

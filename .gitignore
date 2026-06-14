@@ -40,6 +40,9 @@ data/*.idx
 # Lua compiled
 luac.out
 
+# opencode plans
+.opencode/
+
 # IDE
 .idea/
 .vscode/

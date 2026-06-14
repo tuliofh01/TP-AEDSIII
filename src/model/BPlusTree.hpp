@@ -33,6 +33,7 @@ namespace project_model {
 		static constexpr size_t INTERNAL_ENTRY = project_utility::BTREE_INTERNAL_ENTRY_SIZE;
 		static constexpr size_t INTERNAL_MAX = project_utility::BTREE_INTERNAL_MAX_KEYS;
 		static constexpr size_t INTERNAL_MIN = project_utility::BTREE_INTERNAL_MIN_KEYS;
+		static constexpr size_t CHILD_SIZE = project_utility::BTREE_CHILD_SIZE;  // sizeof(int64_t)
 
 		// Leaf constants computed from actual BTreeLeafValue size
 		static constexpr size_t LEAF_VALUE_SIZE = sizeof(BTreeLeafValue);

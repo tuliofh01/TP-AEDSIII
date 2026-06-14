@@ -1,0 +1,66 @@
+@startuml diagrama_casos_uso
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 13
+
+title Casos de Uso - Sistema de Matricula
+
+left to right direction
+
+actor "Aluno" as student
+actor "Professor" as teacher
+actor "Visitante" as guest
+
+rectangle "Sistema de Matricula" {
+    usecase "UC1" as UC1 "Fazer Login\nno Sistema"
+    usecase "UC2" as UC2 "Visualizar\nPerfil Proprio"
+    usecase "UC3" as UC3 "Visualizar\nDisciplinas Disponiveis"
+    usecase "UC4" as UC4 "Solicitar\nMatricula"
+    usecase "UC5" as UC5 "Visualizar\nMatriculas Ativas"
+    usecase "UC6" as UC6 "Cadastrar\nNovo Aluno"
+    usecase "UC7" as UC7 "Cadastrar\nNovo Professor"
+    usecase "UC8" as UC8 "Cadastrar\nNova Disciplina"
+    usecase "UC9" as UC9 "Atribuir Nota\na Aluno"
+    usecase "UC10" as UC10 "Visualizar\nLista de Alunos"
+    usecase "UC11" as UC11 "Visualizar\nLista de Professores"
+    usecase "UC12" as UC12 "Visualizar\nLista de Disciplinas"
+    usecase "UC13" as UC13 "Editar\nDados de Aluno"
+    usecase "UC14" as UC14 "Editar\nDados de Professor"
+    usecase "UC15" as UC15 "Editar\nDados de Disciplina"
+    usecase "UC16" as UC16 "Cancelar\nMatricula"
+    usecase "UC17" as UC17 "Visualizar\nEstatisticas do Sistema"
+}
+
+guest --> UC1
+student --> UC2
+student --> UC3
+student --> UC4
+student --> UC5
+teacher --> UC6
+teacher --> UC7
+teacher --> UC8
+teacher --> UC9
+teacher --> UC10
+teacher --> UC11
+teacher --> UC12
+teacher --> UC13
+teacher --> UC14
+teacher --> UC15
+teacher --> UC16
+teacher --> UC17
+
+note right of UC1
+  CPF + senha numerica
+  (16-bit uint16_t)
+end note
+
+note right of UC4
+  Verifica duplicidade
+  via B+ Tree search()
+end note
+
+note right of UC9
+  Nota 0-100 (uint8_t)
+  Aprovado se >= 60
+end note
+
+@enduml

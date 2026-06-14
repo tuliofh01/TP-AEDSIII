@@ -40,6 +40,7 @@ public:
         const std::string& courseName, int32_t enrollmentYear);
     [[nodiscard]] std::optional<project_model::Student> readStudent(int32_t id) const;
     [[nodiscard]] bool deleteStudent(int32_t id);
+    [[nodiscard]] bool updateStudent(int32_t id, const project_model::StudentRecord& updated);
     [[nodiscard]] std::vector<project_model::Student> listAllStudents() const;
 
     // ---- Teacher CRUD ----
@@ -50,6 +51,7 @@ public:
         const std::string& specialization, uint32_t hireDate);
     [[nodiscard]] std::optional<project_model::Teacher> readTeacher(int32_t id) const;
     [[nodiscard]] bool deleteTeacher(int32_t id);
+    [[nodiscard]] bool updateTeacher(int32_t id, const project_model::TeacherRecord& updated);
     [[nodiscard]] std::vector<project_model::Teacher> listAllTeachers() const;
 
     // ---- Subject CRUD ----
@@ -58,6 +60,7 @@ public:
         int32_t credits, int32_t teacherId);
     [[nodiscard]] std::optional<project_model::Subject> readSubject(int32_t id) const;
     [[nodiscard]] bool deleteSubject(int32_t id);
+    [[nodiscard]] bool updateSubject(int32_t id, const project_model::SubjectRecord& updated);
     [[nodiscard]] std::vector<project_model::Subject> listAllSubjects() const;
 
     // ---- Enrollment (via B+ Tree) ----

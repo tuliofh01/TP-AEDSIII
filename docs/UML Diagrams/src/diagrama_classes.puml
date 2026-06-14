@@ -3,64 +3,39 @@ skinparam backgroundColor #FFFFFF
 skinparam defaultFontSize 13
 title Diagrama de Classes - TP AEDS III
 
+namespace project_utility {
+    class Constants {
+        + NAME_LEN, EMAIL_LEN, CPF_LEN : size_t
+        + BTREE_PAGE_SIZE, BTREE_KEY_SIZE : size_t
+        + FILE_MAGIC, FILE_VERSION : uint32_t
+        + ACCEPTABLE_GRADE : uint8_t
+    }
+    class Enums {
+        + RecStatus { Ativo, Deletado }
+        + RecType { Student, Teacher, Subject }
+    }
+}
+
 namespace project_model {
 
-    class RecordSerializer {
-        + write<T>(buf, off, val) : void
-        + read<T>(buf, off) : T
-        + writeStr(buf, off, str, len) : void
-        + readStr(buf, off, len) : string
+    class FileHeader {
+        + magic : uint32_t
+        + version : uint32_t
+        + headerSize : uint32_t
+        + chunkCount : uint32_t
+        + nextStudentId, nextTeacherId, nextSubjectId : uint32_t
+        + toBytes() : vector<byte>
+        + fromBytes(data) : FileHeader {static}
     }
 
-    class UserRecord {
-        + status : char
+    class ChunkInfo {
         + type : char
-        + userId : int32_t
-        + name : char[50]
-        + email : char[30]
-        + cpf : char[15]
-        + isActive() : bool
-        + setActive() : void
-        + setDeleted() : void
-        + writeCommonFields(buf) : void
-        + readCommonFields(buf) : void
-    }
-
-    class StudentRecord {
-        + birthDate : uint32_t
-        + courseName : char[30]
-        + enrollmentYear : int32_t
+        + offset : uint64_t
+        + recordSize : uint32_t
+        + capacity : uint32_t
+        + used : uint32_t
         + toBytes() : vector<byte>
-        + fromBytes(data) : StudentRecord
-    }
-
-    class TeacherRecord {
-        + department : char[30]
-        + specialization : char[30]
-        + hireDate : uint32_t
-        + toBytes() : vector<byte>
-        + fromBytes(data) : TeacherRecord
-    }
-
-    class SubjectRecord {
-        + status : char
-        + subjectId : int32_t
-        + name : char[50]
-        + code : char[20]
-        + credits : int32_t
-        + teacherId : int32_t
-        + toBytes() : vector<byte>
-        + fromBytes(data) : SubjectRecord
-    }
-
-    class BTreeLeafValue {
-        + studentId : int32_t
-        + subjectId : int32_t
-        + teacherId : int32_t
-        + grade : float
-        + semester : char[12]
-        + toBytes() : vector<byte>
-        + fromBytes(data) : BTreeLeafValue
+        + fromBytes(data) : ChunkInfo {static}
     }
 
     class BPlusTree {
@@ -77,29 +52,85 @@ namespace project_model {
         - borrowOrMerge(parent, idx) : void
     }
 
-    class FileHeader {
-        + magic : uint32_t
-        + version : uint32_t
-        + headerSize : uint32_t
-        + chunkCount : uint32_t
-        + nextStudentId, nextTeacherId, nextSubjectId : uint32_t
-        + toBytes() : vector<byte>
-        + fromBytes(data) : FileHeader
+    class BTreeLeafValue {
+        + studentId : int32_t
+        + subjectId : int32_t
+        + teacherId : int32_t
+        + grade : uint8_t
+        + semester : char[12]
+        + isApproved() : bool
     }
 
-    class ChunkInfo {
+    class UserRecord {
+        + status : char
         + type : char
-        + offset : uint64_t
-        + recordSize : uint32_t
-        + capacity : uint32_t
-        + used : uint32_t
-        + toBytes() : vector<byte>
-        + fromBytes(data) : ChunkInfo
+        + userId : int32_t
+        + password : uint16_t
+        + name : char[50]
+        + email : char[30]
+        + cpf : char[15]
+        + isActive() : bool
+        + nameStr() : string
+        + emailStr() : string
+        + cpfStr() : string
+    }
+
+    class StudentRecord {
+        + birthDate : uint32_t
+        + courseName : char[30]
+        + enrollmentYear : int32_t
+        + courseStr() : string
+    }
+
+    class TeacherRecord {
+        + department : char[30]
+        + specialization : char[30]
+        + hireDate : uint32_t
+        + deptStr() : string
+        + specStr() : string
+    }
+
+    class SubjectRecord {
+        + status : char
+        + type : char
+        + subjectId : int32_t
+        + name : char[50]
+        + code : char[20]
+        + credits : int32_t
+        + teacherId : int32_t
+        + isActive() : bool
+        + nameStr() : string
+        + codeStr() : string
+    }
+
+    class Student {
+        + raw() : StudentRecord
+        + fromBytes(data) : Student {static}
+    }
+
+    class Teacher {
+        + raw() : TeacherRecord
+        + fromBytes(data) : Teacher {static}
+    }
+
+    class Subject {
+        + raw() : SubjectRecord
+        + fromBytes(data) : Subject {static}
+    }
+
+    class Enrollment {
+        + raw() : BTreeLeafValue
+        + fromBytes(data) : Enrollment {static}
     }
 
     StudentRecord -up-|> UserRecord
     TeacherRecord -up-|> UserRecord
+    Student --> StudentRecord
+    Teacher --> TeacherRecord
+    Subject --> SubjectRecord
+    Enrollment --> BTreeLeafValue
     BPlusTree --> BTreeLeafValue
+    BTreeLeafValue ..> Constants : uses
 }
 
 namespace project_controller {
@@ -110,7 +141,6 @@ namespace project_controller {
         + readRecord(index) : optional<byte[]>
         + appendRecord(data) : bool
         + markDeleted(index) : bool
-        + setRecordSize(size) : void
     }
 
     class IndexValue {
@@ -129,6 +159,12 @@ namespace project_controller {
         + load() : bool
     }
 
+    class LoginResult {
+        + userId : int32_t
+        + role : char
+        + name : string
+    }
+
     class DataManager {
         - dataFile_ : fstream
         - chunks_[4] : ChunkInfo
@@ -136,28 +172,40 @@ namespace project_controller {
         - indexCtrl_ : IndexCtrl
         + initialize(dataDir) : bool
         + createStudent(...) : bool
+        + readStudent(id) : optional<Student>
+        + updateStudent(id, updated) : bool
+        + deleteStudent(id) : bool
+        + listAllStudents() : vector<Student>
         + createTeacher(...) : bool
+        + readTeacher(id) : optional<Teacher>
+        + updateTeacher(id, updated) : bool
+        + deleteTeacher(id) : bool
+        + listAllTeachers() : vector<Teacher>
         + createSubject(...) : bool
-        + readStudent(id) : optional<StudentRecord>
-        + readTeacher(id) : optional<TeacherRecord>
-        + readSubject(id) : optional<SubjectRecord>
-        + listAllStudents() : vector<StudentRecord>
-        + listAllTeachers() : vector<TeacherRecord>
-        + listAllSubjects() : vector<SubjectRecord>
+        + readSubject(id) : optional<Subject>
+        + updateSubject(id, updated) : bool
+        + deleteSubject(id) : bool
+        + listAllSubjects() : vector<Subject>
         + enrollStudent(sid, bid, tid, sem) : bool
-        + getEnrollmentsByStudent(sid) : vector<BTreeLeafValue>
-        + getEnrollmentsBySubject(bid) : vector<BTreeLeafValue>
+        + getEnrollment(sid, bid) : optional<Enrollment>
+        + getEnrollmentsByStudent(sid) : vector<Enrollment>
+        + getEnrollmentsBySubject(bid) : vector<Enrollment>
         + unenroll(sid, bid) : bool
         + updateGrade(sid, bid, grade) : bool
+        + login(cpf, password) : optional<LoginResult>
+        + getLastError() : string
+        + getActiveCount(type) : int32_t
         - reallocateChunk(ci) : bool
         - computeChunkOffsets() : void
     }
 
     DataManager --> BPlusTree
     DataManager --> IndexCtrl
-    DataManager --> FileManager
     DataManager --> ChunkInfo
     DataManager --> FileHeader
+    DataManager --> LoginResult
 }
 
+FileHeader ..> Constants : uses
+ChunkInfo ..> Constants : uses
 @enduml

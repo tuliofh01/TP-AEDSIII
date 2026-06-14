@@ -133,16 +133,35 @@ namespace project_model {
 	// ========================================
 	// Internal node accessors
 	// ========================================
+	// Internal node page layout (after 31-byte header):
+	//   [child(0):8][key(1):20][child(1):8][key(2):20]...[child(N):8]
+	//   ^-- HEADER_SIZE
+	//                    ^-- HEADER_SIZE+CHILD_SIZE
+	//                                   ^-- HEADER_SIZE+INTERNAL_ENTRY
+	//                                                    ^-- HEADER_SIZE+INTERNAL_ENTRY+CHILD_SIZE
+	//
+	// Each INTERNAL_ENTRY = 28 bytes = CHILD_SIZE(8) + KEY_SIZE(20).
+	// Child pointers and separator keys alternate:
+	//   internalChild(buf, i)   = buf + HEADER_SIZE + i * INTERNAL_ENTRY
+	//   internalKeyPtr(buf, i)  = buf + HEADER_SIZE + CHILD_SIZE + (i-1) * INTERNAL_ENTRY
+	// ========================================
 	int64_t& BPlusTree::internalChild(std::byte* pageBuf, size_t index) {
 		return *reinterpret_cast<int64_t*>(pageBuf + HEADER_SIZE + index * INTERNAL_ENTRY);
 	}
 
 	std::byte* BPlusTree::internalKeyPtr(std::byte* pageBuf, size_t index) {
-		return pageBuf + HEADER_SIZE + INTERNAL_ENTRY + (index - 1) * INTERNAL_ENTRY;
+		return pageBuf + HEADER_SIZE + CHILD_SIZE + (index - 1) * INTERNAL_ENTRY;
 	}
 
 	// ========================================
 	// Leaf node accessors
+	// ========================================
+	// Leaf node page layout (after 31-byte header):
+	//   [entry(0):45][entry(1):45]...[entry(N):45]
+	//   ^-- HEADER_SIZE
+	//
+	// Each LEAF_ENTRY = 45 bytes = KEY_SIZE(20) + LEAF_VALUE_SIZE(25).
+	// leafEntryPtr(buf, i) = buf + HEADER_SIZE + i * LEAF_ENTRY
 	// ========================================
 	std::byte* BPlusTree::leafEntryPtr(std::byte* pageBuf, size_t index) {
 		return pageBuf + HEADER_SIZE + index * LEAF_ENTRY;
@@ -171,43 +190,44 @@ namespace project_model {
 	// ========================================
 	std::optional<BTreeLeafValue> BPlusTree::search(const std::string& key) const {
 		if (empty()) return std::nullopt;
+		// Format the key to the fixed KEY_SIZE, then descend from the root
 		return searchInNode(fileHeader_.rootPageId, formatKey(key));
 	}
 
 	std::optional<BTreeLeafValue> BPlusTree::searchInNode(int64_t nodeId,
 		const std::string& key) const {
-		std::vector<std::byte> page(PAGE_SIZE);
-		readPage(nodeId, page);
-		auto* pageBuf = page.data();
+		// Recursively descend the tree: at each internal node, scan separator keys
+		// to find the correct child branch; at the leaf, scan entries for an exact match.
+		std::vector<std::byte> pageBuffer(PAGE_SIZE);
+		readPage(nodeId, pageBuffer);
+		auto* pageBuf = pageBuffer.data();
 
 		if (pageType(pageBuf) == 'L') {
-			// Leaf node: scan entries
+			// Leaf: linear scan all entries looking for an exact key match
 			uint16_t keyCount = pageNumKeys(pageBuf);
-			for (uint16_t i = 0; i < keyCount; ++i) {
+			for (uint16_t entryIndex = 0; entryIndex < keyCount; ++entryIndex) {
 				std::string entryKey;
-				BTreeLeafValue val;
-				leafGetEntry(pageBuf, i, entryKey, val);
-				if (entryKey == key) return val;
+				BTreeLeafValue entryValue;
+				leafGetEntry(pageBuf, entryIndex, entryKey, entryValue);
+				if (entryKey == key) return entryValue;
 			}
 			return std::nullopt;
 		}
 
-		// Internal node: find correct child
+		// Internal node: compare key against each separator to pick the correct child
 		uint16_t keyCount = pageNumKeys(pageBuf);
-		size_t childIdx = 0;
-		for (uint16_t i = 1; i <= keyCount; ++i) {
-			std::string sepKey;
-			BTreeLeafValue dummy;
-			auto* keyPtr = internalKeyPtr(pageBuf, i);
-			sepKey = extractKey(keyPtr);
-			if (key < sepKey) {
-				childIdx = static_cast<size_t>(i - 1);
-				goto descend;
+		size_t childIndex = 0;
+		for (uint16_t separatorIndex = 1; separatorIndex <= keyCount; ++separatorIndex) {
+			auto* keyPtr = internalKeyPtr(pageBuf, separatorIndex);
+			auto separatorKey = extractKey(keyPtr);
+			if (key < separatorKey) {
+				childIndex = static_cast<size_t>(separatorIndex - 1);
+				goto descend_search;
 			}
-			childIdx = static_cast<size_t>(i);
+			childIndex = static_cast<size_t>(separatorIndex);
 		}
-		descend:
-		int64_t childId = internalChild(pageBuf, childIdx);
+		descend_search:
+		int64_t childId = internalChild(pageBuf, childIndex);
 		return searchInNode(childId, key);
 	}
 
@@ -223,48 +243,55 @@ namespace project_model {
 	}
 
 	void BPlusTree::collectRange(int64_t nodeId, const std::string& prefix,
-		std::vector<std::pair<std::string, BTreeLeafValue>>& out) const {
+		std::vector<std::pair<std::string, BTreeLeafValue>>& collectedResults) const {
+		// Collect all entries whose key starts with the given prefix.
+		// For internal nodes, recurse into every child (all branches potentially match).
+		// For leaves, find the first entry >= prefix via linear scan,
+		// then follow the next-leaf chain until keys no longer match the prefix.
 
-		std::vector<std::byte> page(PAGE_SIZE);
-		readPage(nodeId, page);
-		auto* pageBuf = page.data();
+		std::vector<std::byte> pageBuffer(PAGE_SIZE);
+		readPage(nodeId, pageBuffer);
+		auto* pageBuf = pageBuffer.data();
 
 		if (pageType(pageBuf) == 'I') {
 			uint16_t keyCount = pageNumKeys(pageBuf);
-			// Find first child that might have matches
-			collectRange(internalChild(pageBuf, 0), prefix, out);
-			for (uint16_t i = 1; i <= keyCount; ++i) {
-				collectRange(internalChild(pageBuf, i), prefix, out);
+			// Internal node: every child branch may contain prefix-matching keys;
+			// recurse into all of them (child[0] through child[keyCount])
+			for (uint16_t childIndex = 0; childIndex <= keyCount; ++childIndex) {
+				collectRange(internalChild(pageBuf, childIndex), prefix, collectedResults);
 			}
 			return;
 		}
 
-		// Leaf: start from first matching entry, walk right
-		int64_t currentId = nodeId;
-		bool started = false;
+		// Leaf: scan entries in this leaf, then follow pageNextLeaf to the right
+		int64_t currentLeafId = nodeId;
+		bool rangeStarted = false;
 
-		while (currentId >= 0) {
-			std::vector<std::byte> leafPage(PAGE_SIZE);
-			readPage(currentId, leafPage);
-			auto* leftPageBuf = leafPage.data();
-			uint16_t keyCount = pageNumKeys(leftPageBuf);
+		while (currentLeafId >= 0) {
+			std::vector<std::byte> leafPageBuffer(PAGE_SIZE);
+			readPage(currentLeafId, leafPageBuffer);
+			auto* leafPageBuf = leafPageBuffer.data();
+			uint16_t keyCount = pageNumKeys(leafPageBuf);
 
-			for (uint16_t i = 0; i < keyCount; ++i) {
-				std::string key;
-				BTreeLeafValue val;
-				leafGetEntry(leftPageBuf, i, key, val);
+			for (uint16_t entryIndex = 0; entryIndex < keyCount; ++entryIndex) {
+				std::string entryKey;
+				BTreeLeafValue entryValue;
+				leafGetEntry(leafPageBuf, entryIndex, entryKey, entryValue);
 
-				if (!started) {
-					if (key.substr(0, prefix.size()) < prefix) continue;
-					if (key.substr(0, prefix.size()) > prefix) return;
-					started = true;
+				if (!rangeStarted) {
+					// Skip entries that are lexicographically smaller than the prefix
+					if (entryKey.substr(0, prefix.size()) < prefix) continue;
+					// Stop entirely if entries now exceed the prefix range
+					if (entryKey.substr(0, prefix.size()) > prefix) return;
+					rangeStarted = true;
 				}
 
-				if (key.substr(0, prefix.size()) != prefix) return;
-				out.emplace_back(key, val);
+				// Once started, every entry must match the prefix; stop at the first mismatch
+				if (entryKey.substr(0, prefix.size()) != prefix) return;
+				collectedResults.emplace_back(entryKey, entryValue);
 			}
 
-			currentId = pageNextLeaf(leftPageBuf);
+			currentLeafId = pageNextLeaf(leafPageBuf);
 		}
 	}
 
@@ -291,66 +318,74 @@ namespace project_model {
 		auto* rootBuf = rootPage.data();
 
 		if (pageType(rootBuf) == 'L' && pageNumKeys(rootBuf) >= LEAF_MAX) {
-			// Split root
-			int64_t newRootId = allocatePage('I');
+			// ============================================================
+			// Root-split: the single leaf root is full (≥ LEAF_MAX entries).
+			// We transform it into a three-node tree:
+			//
+			//   Before:    [root: leaf (full)]
+			//
+			//   After:     [newRoot: internal]
+			//              /                  \
+			//   [oldRootId: leaf (1st half)]  [newLeafId: leaf (2nd half)]
+			//
+			// Key invariants:
+			//   1. oldRootId keeps its page ID but is trimmed to the first half
+			//   2. newLeafId is a fresh allocation for the second half
+			//   3. newRootId is a fresh internal node (never reuse rootBuf)
+			//   4. The separator key pushed up = first key of the new leaf
+			//   5. Leaf chain: oldLeaf <-> newLeaf
+			// ============================================================
+			int64_t oldRootId = fileHeader_.rootPageId;
 			int64_t newLeafId = allocatePage('L');
+			int64_t newRootId = allocatePage('I');
 
-			// Move half of root's entries to new leaf
-			auto oldRootId = fileHeader_.rootPageId;
-			auto* oldBuf = rootPage.data();
-			uint16_t half = LEAF_MAX / 2;
+			uint16_t totalKeys = pageNumKeys(rootBuf);
+			uint16_t halfCount = totalKeys / 2;               // entries to keep in old leaf
+			uint16_t movedCount = totalKeys - halfCount;       // entries to move to new leaf
 
-			std::vector<std::byte> newLeaf(PAGE_SIZE);
-			std::memset(newLeaf.data(), 0, PAGE_SIZE);
-			pageType(newLeaf.data()) = 'L';
-			pagePrevLeaf(newLeaf.data()) = oldRootId;
-			pageNextLeaf(newLeaf.data()) = pageNextLeaf(oldBuf);
-			pageNextLeaf(oldBuf) = newLeafId;
-			pageType(oldBuf) = 'L';
+			// Build new leaf buffer (right sibling, receives second half)
+			std::vector<std::byte> newLeafBuffer(PAGE_SIZE, std::byte{0});
+			pageType(newLeafBuffer.data()) = 'L';
+			pagePrevLeaf(newLeafBuffer.data()) = oldRootId;
+			pageNextLeaf(newLeafBuffer.data()) = pageNextLeaf(rootBuf);
+			pageNextLeaf(rootBuf) = newLeafId;
 
-			// Copy entries to new leaf
-			uint16_t moved = 0;
-			BTreeLeafValue firstVal;
-			std::string firstKey;
-			for (uint16_t i = half; i < pageNumKeys(oldBuf); ++i) {
-				leafGetEntry(oldBuf, i, firstKey, firstVal);
-				leafSetEntry(newLeaf.data(), moved, firstKey, firstVal);
-				moved++;
+			BTreeLeafValue movedValue;
+			std::string movedKey;
+			for (uint16_t i = 0; i < movedCount; ++i) {
+				leafGetEntry(rootBuf, halfCount + i, movedKey, movedValue);
+				leafSetEntry(newLeafBuffer.data(), i, movedKey, movedValue);
 			}
-			pageNumKeys(newLeaf.data()) = moved;
-			pageNumKeys(oldBuf) = half - 1;
-			// Actually half entries stay, half go to new leaf
-			// Let me recalculate: old has N entries. keep first N/2, move rest
+			pageNumKeys(newLeafBuffer.data()) = movedCount;
 
-			// Hmm, let me restart this logic properly
-			// Actually, let me just rebuild from scratch for the root split
+			// Trim old leaf to first half
+			pageNumKeys(rootBuf) = halfCount;
 
-			// For now: old leaf becomes first half, new leaf gets second half
-			pageNumKeys(oldBuf) = half;
-			pageNumKeys(newLeaf.data()) = LEAF_MAX - half;
+			// Extract separator key = first key of the new leaf
+			leafGetEntry(newLeafBuffer.data(), 0, movedKey, movedValue);
 
-			// Get split key (first key of new leaf)
-			std::string splitKey;
-			leafGetEntry(newLeaf.data(), 0, splitKey, firstVal);
+			// Build new root internal node (fresh buffer, never alias rootBuf)
+			std::vector<std::byte> newRootBuffer(PAGE_SIZE, std::byte{0});
+			pageType(newRootBuffer.data()) = 'I';
+			pageParent(newRootBuffer.data()) = -1;
+			internalChild(newRootBuffer.data(), 0) = oldRootId;
+			internalChild(newRootBuffer.data(), 1) = newLeafId;
+			pageNumKeys(newRootBuffer.data()) = 1;
+			std::memcpy(
+				internalKeyPtr(newRootBuffer.data(), 1),
+				movedKey.data(),
+				std::min(movedKey.size(), KEY_SIZE - 1)
+			);
 
-			// Set up new root (internal node)
-			pageType(rootBuf) = 'I';
-			pageNumKeys(rootBuf) = 0;
-			pageParent(rootBuf) = -1;
-			pageNextLeaf(rootBuf) = -1;
-			pagePrevLeaf(rootBuf) = -1;
-			internalChild(rootBuf, 0) = oldRootId;
-			pageParent(oldBuf) = newRootId;
-			pageParent(newLeaf.data()) = newRootId;
+			// Update parent pointers of children
+			pageParent(rootBuf) = newRootId;
+			pageParent(newLeafBuffer.data()) = newRootId;
 
-			// Insert split key and new child pointer
-			pageNumKeys(rootBuf) = 1;
-			std::memcpy(internalKeyPtr(rootBuf, 1), splitKey.data(),
-				std::min(splitKey.size(), KEY_SIZE - 1));
-			internalChild(rootBuf, 1) = newLeafId;
+			// Persist all three pages
+			writePage(oldRootId, rootPage);        // trimmed leaf
+			writePage(newLeafId, newLeafBuffer);    // new leaf
+			writePage(newRootId, newRootBuffer);    // new internal root
 
-			writePage(oldRootId, rootPage);
-			writePage(newLeafId, newLeaf);
 			fileHeader_.rootPageId = newRootId;
 			saveHeader();
 		}
@@ -363,168 +398,210 @@ namespace project_model {
 
 	void BPlusTree::insertNonFull(int64_t nodeId, const std::string& key,
 		const BTreeLeafValue& value) {
+		// Descend from nodeId, finding the correct leaf to insert into.
+		// If a child is full, split it before descending further.
+		// This guarantees every node along the path has room — hence "non-full".
 		std::vector<std::byte> page(PAGE_SIZE);
 		readPage(nodeId, page);
 		auto* pageBuf = page.data();
 
 		if (pageType(pageBuf) == 'L') {
-			// Leaf: insert in sorted position
+			// Leaf: find sorted insertion position, shift entries right, insert
 			uint16_t keyCount = pageNumKeys(pageBuf);
-			int16_t pos = static_cast<int16_t>(keyCount) - 1;
+			int16_t insertionPosition = static_cast<int16_t>(keyCount) - 1;
 
-			while (pos >= 0) {
+			// Scan from right to left to find where key belongs
+			while (insertionPosition >= 0) {
 				std::string existingKey;
 				BTreeLeafValue dummyVal;
-				leafGetEntry(pageBuf, static_cast<size_t>(pos), existingKey, dummyVal);
+				leafGetEntry(pageBuf, static_cast<size_t>(insertionPosition), existingKey, dummyVal);
 				if (key >= existingKey) break;
-				pos--;
+				insertionPosition--;
 			}
-			pos++; // insert at pos+1
+			insertionPosition++; // insert at insertionPosition (after the last smaller key)
 
-			// Shift entries right
-			for (uint16_t i = keyCount; i > static_cast<uint16_t>(pos); --i) {
+			// Shift entries right to make room
+			for (uint16_t i = keyCount; i > static_cast<uint16_t>(insertionPosition); --i) {
 				std::string srcKey;
 				BTreeLeafValue srcVal;
 				leafGetEntry(pageBuf, i - 1, srcKey, srcVal);
 				leafSetEntry(pageBuf, i, srcKey, srcVal);
 			}
 
-			leafSetEntry(pageBuf, static_cast<size_t>(pos), key, value);
+			leafSetEntry(pageBuf, static_cast<size_t>(insertionPosition), key, value);
 			pageNumKeys(pageBuf) = keyCount + 1;
 			writePage(nodeId, page);
 			return;
 		}
 
-		// Internal: find child to descend into
+		// Internal node: find the correct child pointer by scanning separator keys
 		uint16_t keyCount = pageNumKeys(pageBuf);
-		size_t childIdx = 0;
+		size_t childIndex = 0;
 		for (uint16_t i = 1; i <= keyCount; ++i) {
 			auto* keyPtr = internalKeyPtr(pageBuf, i);
-			auto sepKey = extractKey(keyPtr);
-			if (key < sepKey) {
-				childIdx = static_cast<size_t>(i - 1);
-				goto descend_internal;
+			auto separatorKey = extractKey(keyPtr);
+			if (key < separatorKey) {
+				childIndex = static_cast<size_t>(i - 1);
+				goto descend_internal_nonfull;
 			}
-			childIdx = static_cast<size_t>(i);
+			childIndex = static_cast<size_t>(i);
 		}
-		descend_internal:
+		descend_internal_nonfull:
 
-		int64_t childId = internalChild(pageBuf, childIdx);
+		int64_t childId = internalChild(pageBuf, childIndex);
 
-		// Check if child is full
-		std::vector<std::byte> childPage(PAGE_SIZE);
-		readPage(childId, childPage);
-		auto* childBuf = childPage.data();
-		bool childFull = (pageType(childBuf) == 'L' && pageNumKeys(childBuf) >= LEAF_MAX)
-			|| (pageType(childBuf) == 'I' && pageNumKeys(childBuf) >= INTERNAL_MAX);
+		// Read the child and check if it is full — if so, split it first
+		std::vector<std::byte> childPageBuffer(PAGE_SIZE);
+		readPage(childId, childPageBuffer);
+		auto* childPageBuf = childPageBuffer.data();
+		bool childIsFull = (pageType(childPageBuf) == 'L' && pageNumKeys(childPageBuf) >= LEAF_MAX)
+			|| (pageType(childPageBuf) == 'I' && pageNumKeys(childPageBuf) >= INTERNAL_MAX);
 
-		if (childFull) {
-			splitChild(nodeId, childIdx, childId);
-			// After split, determine which child to descend into
+		if (childIsFull) {
+			splitChild(nodeId, childIndex, childId);
+			// After split, re-read the parent (its keys/children shifted) and re-determine which child
 			readPage(nodeId, page);
 			pageBuf = page.data();
 			keyCount = pageNumKeys(pageBuf);
-			// Re-read the children
 			for (uint16_t i = 1; i <= keyCount; ++i) {
 				auto* keyPtr = internalKeyPtr(pageBuf, i);
-				auto sepKey = extractKey(keyPtr);
-				if (key < sepKey) {
+				auto separatorKey = extractKey(keyPtr);
+				if (key < separatorKey) {
 					childId = internalChild(pageBuf, static_cast<size_t>(i - 1));
-					goto descend_after_split;
+					goto descend_after_split_nonfull;
 				}
 			}
 			childId = internalChild(pageBuf, static_cast<size_t>(keyCount));
 		}
-		descend_after_split:
+		descend_after_split_nonfull:
 
 		insertNonFull(childId, key, value);
 	}
 
-	void BPlusTree::splitChild(int64_t parentId, size_t childIdx, int64_t childId) {
-		std::vector<std::byte> parentPage(PAGE_SIZE);
-		readPage(parentId, parentPage);
-		auto* parentBuf = parentPage.data();
+	void BPlusTree::splitChild(int64_t parentId, size_t childIndex, int64_t childId) {
+		// Split a full child node into two siblings, promoting the median key
+		// (or, for a leaf, the first key of the right sibling) into the parent.
+		//
+		// Internal node split layout:
+		//   Before:        parent: [... child(i) ...]
+		//                  child:  [c0][k1][c1][k2][c2]...[kN][cN]
+		//
+		//   After:         parent: [... child(i) | MEDIAN_KEY | newSibling ...]
+		//                  child (left):  [c0][k1][c1]...[kH][cH]
+		//                  newSibling:    [cH+1][kH+2][cH+2]...[kN][cN]
+		//
+		// Leaf split layout (no median, first key of right sibling promotes):
+		//   After:         parent: [... child(i) | FIRST_KEY_OF_NEW ...]
+		//                  child (left):  first half of entries
+		//                  newSibling:    second half of entries
+		// ============================================================
 
-		std::vector<std::byte> childPage(PAGE_SIZE);
-		readPage(childId, childPage);
-		auto* childBuf = childPage.data();
+		std::vector<std::byte> parentPageBuffer(PAGE_SIZE);
+		readPage(parentId, parentPageBuffer);
+		auto* parentPageBuf = parentPageBuffer.data();
 
-		bool isLeaf = (pageType(childBuf) == 'L');
-		int64_t newId = allocatePage(isLeaf ? 'L' : 'I');
-		std::vector<std::byte> newPage_pageBuf(PAGE_SIZE);
-		std::memset(newPage_pageBuf.data(), 0, PAGE_SIZE);
-		auto* newBuf = newPage_pageBuf.data();
+		std::vector<std::byte> childPageBuffer(PAGE_SIZE);
+		readPage(childId, childPageBuffer);
+		auto* childPageBuf = childPageBuffer.data();
 
-		pageParent(newBuf) = parentId;
-		pageType(newBuf) = pageType(childBuf);
+		bool childIsLeaf = (pageType(childPageBuf) == 'L');
+		int64_t newSiblingId = allocatePage(childIsLeaf ? 'L' : 'I');
+		std::vector<std::byte> newSiblingBuffer(PAGE_SIZE, std::byte{0});
+		auto* newSiblingBuf = newSiblingBuffer.data();
 
-		uint16_t keyCount = pageNumKeys(childBuf);
-		uint16_t half = isLeaf ? LEAF_MAX / 2 : INTERNAL_MAX / 2;
-		uint16_t moved = keyCount - half;
+		pageParent(newSiblingBuf) = parentId;
+		pageType(newSiblingBuf) = pageType(childPageBuf);
 
-		if (isLeaf) {
-			// Copy right half to new leaf
-			for (uint16_t i = half; i < keyCount; ++i) {
+		uint16_t childKeyCount = pageNumKeys(childPageBuf);
+		uint16_t halfCount = childIsLeaf ? LEAF_MAX / 2 : INTERNAL_MAX / 2;
+		uint16_t entriesMoved = childKeyCount - halfCount;
+
+		if (childIsLeaf) {
+			// Copy the right half of the leaf entries into the new sibling
+			for (uint16_t i = halfCount; i < childKeyCount; ++i) {
 				std::string entryKey;
 				BTreeLeafValue entryValue;
-				leafGetEntry(childBuf, i, entryKey, entryValue);
-				leafSetEntry(newBuf, i - half, entryKey, entryValue);
+				leafGetEntry(childPageBuf, i, entryKey, entryValue);
+				leafSetEntry(newSiblingBuf, i - halfCount, entryKey, entryValue);
 			}
-			pageNumKeys(newBuf) = moved;
-			pageNumKeys(childBuf) = half;
+			pageNumKeys(newSiblingBuf) = entriesMoved;
+			pageNumKeys(childPageBuf) = halfCount;
 
-			// Update leaf chain
-			pageNextLeaf(newBuf) = pageNextLeaf(childBuf);
-			pagePrevLeaf(newBuf) = childId;
-			pageNextLeaf(childBuf) = newId;
+			// Link the two leaves into the doubly-linked chain
+			pageNextLeaf(newSiblingBuf) = pageNextLeaf(childPageBuf);
+			pagePrevLeaf(newSiblingBuf) = childId;
+			pageNextLeaf(childPageBuf) = newSiblingId;
 
-			// Get split key
+			// The separator key for a leaf split is the first key of the new sibling
 			std::string splitKey;
 			BTreeLeafValue dummyVal;
-			leafGetEntry(newBuf, 0, splitKey, dummyVal);
+			leafGetEntry(newSiblingBuf, 0, splitKey, dummyVal);
 
-			// Insert into parent
-			uint16_t pn = pageNumKeys(parentBuf);
-			for (uint16_t i = pn; i > static_cast<uint16_t>(childIdx + 1); --i) {
-				internalChild(parentBuf, i) = internalChild(parentBuf, i - 1);
-				std::memcpy(internalKeyPtr(parentBuf, i), internalKeyPtr(parentBuf, i - 1), KEY_SIZE);
+			// Insert the new child pointer and separator key into the parent
+			uint16_t parentKeyCount = pageNumKeys(parentPageBuf);
+			for (uint16_t i = parentKeyCount; i > static_cast<uint16_t>(childIndex + 1); --i) {
+				internalChild(parentPageBuf, i) = internalChild(parentPageBuf, i - 1);
+				std::memcpy(
+					internalKeyPtr(parentPageBuf, i),
+					internalKeyPtr(parentPageBuf, i - 1),
+					KEY_SIZE
+				);
 			}
-
-			pageNumKeys(parentBuf) = pn + 1;
-			internalChild(parentBuf, childIdx + 1) = newId;
-			std::memcpy(internalKeyPtr(parentBuf, childIdx + 1), splitKey.data(),
-				std::min(splitKey.size(), KEY_SIZE - 1));
+			pageNumKeys(parentPageBuf) = parentKeyCount + 1;
+			internalChild(parentPageBuf, childIndex + 1) = newSiblingId;
+			std::memcpy(
+				internalKeyPtr(parentPageBuf, childIndex + 1),
+				splitKey.data(),
+				std::min(splitKey.size(), KEY_SIZE - 1)
+			);
 		} else {
-			// Internal node: move separator keys and children
-			// Copy child pointer
-			internalChild(newBuf, 0) = internalChild(childBuf, half + 1);
-			// Copy keys and their children
-			for (uint16_t i = half + 1; i <= keyCount; ++i) {
-				uint16_t newIdx = i - half - 1;
-				if (newIdx > 0)
-					std::memcpy(internalKeyPtr(newBuf, newIdx), internalKeyPtr(childBuf, i), KEY_SIZE);
-				internalChild(newBuf, newIdx + 1) = internalChild(childBuf, i + 1);
-			}
-			pageNumKeys(newBuf) = keyCount - half - 1;
-			pageNumKeys(childBuf) = half;
+			// Internal node split: move the right half of children and keys
+			// The median key (at position half + 1) is promoted to the parent.
+			// Note: child[half] stays in the left node; child[half + 1] moves to the right node.
 
-			// The middle key goes up to parent
-			auto splitKey = extractKey(internalKeyPtr(childBuf, half + 1));
+			// First child pointer of new sibling = child[half + 1] of original
+			internalChild(newSiblingBuf, 0) = internalChild(childPageBuf, halfCount + 1);
 
-			uint16_t pn = pageNumKeys(parentBuf);
-			for (uint16_t i = pn; i > static_cast<uint16_t>(childIdx + 1); --i) {
-				internalChild(parentBuf, i) = internalChild(parentBuf, i - 1);
-				std::memcpy(internalKeyPtr(parentBuf, i), internalKeyPtr(parentBuf, i - 1), KEY_SIZE);
+			// Copy keys and child pointers for the right half (positions half+2 .. end)
+			for (uint16_t i = halfCount + 1; i <= childKeyCount; ++i) {
+				uint16_t destinationIndex = i - halfCount - 1;
+				if (destinationIndex > 0) {
+					std::memcpy(
+						internalKeyPtr(newSiblingBuf, destinationIndex),
+						internalKeyPtr(childPageBuf, i),
+						KEY_SIZE
+					);
+				}
+				internalChild(newSiblingBuf, destinationIndex + 1) = internalChild(childPageBuf, i + 1);
 			}
-			pageNumKeys(parentBuf) = pn + 1;
-			internalChild(parentBuf, childIdx + 1) = newId;
-			std::memcpy(internalKeyPtr(parentBuf, childIdx + 1), splitKey.data(),
-				std::min(splitKey.size(), KEY_SIZE - 1));
+			pageNumKeys(newSiblingBuf) = childKeyCount - halfCount - 1;
+			pageNumKeys(childPageBuf) = halfCount;
+
+			// The median key (at position half + 1 in the original child) goes up
+			auto splitKey = extractKey(internalKeyPtr(childPageBuf, halfCount + 1));
+
+			// Insert new child + separator key into parent, shifting right
+			uint16_t parentKeyCount = pageNumKeys(parentPageBuf);
+			for (uint16_t i = parentKeyCount; i > static_cast<uint16_t>(childIndex + 1); --i) {
+				internalChild(parentPageBuf, i) = internalChild(parentPageBuf, i - 1);
+				std::memcpy(
+					internalKeyPtr(parentPageBuf, i),
+					internalKeyPtr(parentPageBuf, i - 1),
+					KEY_SIZE
+				);
+			}
+			pageNumKeys(parentPageBuf) = parentKeyCount + 1;
+			internalChild(parentPageBuf, childIndex + 1) = newSiblingId;
+			std::memcpy(
+				internalKeyPtr(parentPageBuf, childIndex + 1),
+				splitKey.data(),
+				std::min(splitKey.size(), KEY_SIZE - 1)
+			);
 		}
 
-		writePage(childId, childPage);
-		writePage(newId, newPage_pageBuf);
-		writePage(parentId, parentPage);
+		writePage(childId, childPageBuffer);
+		writePage(newSiblingId, newSiblingBuffer);
+		writePage(parentId, parentPageBuffer);
 	}
 
 	// ========================================
@@ -552,242 +629,365 @@ namespace project_model {
 	}
 
 	bool BPlusTree::eraseFromNode(int64_t nodeId, const std::string& key) {
-		std::vector<std::byte> page(PAGE_SIZE);
-		readPage(nodeId, page);
-		auto* pageBuf = page.data();
+		// Recursively find the target key in the tree and remove it.
+		// If the resulting child is underfull (< LEAF_MIN or < INTERNAL_MIN),
+		// trigger borrowOrMerge to rebalance from a sibling.
+		std::vector<std::byte> pageBuffer(PAGE_SIZE);
+		readPage(nodeId, pageBuffer);
+		auto* pageBuf = pageBuffer.data();
 
 		if (pageType(pageBuf) == 'L') {
+			// Leaf: scan entries for an exact key match
 			uint16_t keyCount = pageNumKeys(pageBuf);
-			for (uint16_t i = 0; i < keyCount; ++i) {
+			for (uint16_t entryIndex = 0; entryIndex < keyCount; ++entryIndex) {
 				std::string entryKey;
 				BTreeLeafValue entryValue;
-				leafGetEntry(pageBuf, i, entryKey, entryValue);
+				leafGetEntry(pageBuf, entryIndex, entryKey, entryValue);
 				if (entryKey == key) {
-					// Shift left
-					for (uint16_t j = i; j + 1 < keyCount; ++j) {
-						std::string sjKey;
-						BTreeLeafValue sjVal;
-						leafGetEntry(pageBuf, j + 1, sjKey, sjVal);
-						leafSetEntry(pageBuf, j, sjKey, sjVal);
+					// Shift all subsequent entries left by one (overwrites the deleted entry)
+					for (uint16_t shiftIndex = entryIndex; shiftIndex + 1 < keyCount; ++shiftIndex) {
+						std::string nextKey;
+						BTreeLeafValue nextValue;
+						leafGetEntry(pageBuf, shiftIndex + 1, nextKey, nextValue);
+						leafSetEntry(pageBuf, shiftIndex, nextKey, nextValue);
 					}
 					pageNumKeys(pageBuf) = keyCount - 1;
-					writePage(nodeId, page);
+					writePage(nodeId, pageBuffer);
 					return true;
 				}
 			}
 			return false;
 		}
 
-		// Internal node
+		// Internal node: find which child branch leads to the key
 		uint16_t keyCount = pageNumKeys(pageBuf);
-		size_t childIdx = 0;
-		for (uint16_t i = 1; i <= keyCount; ++i) {
-			auto* keyPtr = internalKeyPtr(pageBuf, i);
-			auto sepKey = extractKey(keyPtr);
-			if (key < sepKey) {
-				childIdx = static_cast<size_t>(i - 1);
-				goto erase_descend;
+		size_t childIndex = 0;
+		for (uint16_t separatorIndex = 1; separatorIndex <= keyCount; ++separatorIndex) {
+			auto* keyPtr = internalKeyPtr(pageBuf, separatorIndex);
+			auto separatorKey = extractKey(keyPtr);
+			if (key < separatorKey) {
+				childIndex = static_cast<size_t>(separatorIndex - 1);
+				goto erase_descend_internal;
 			}
-			childIdx = static_cast<size_t>(i);
+			childIndex = static_cast<size_t>(separatorIndex);
 		}
-		erase_descend:
+		erase_descend_internal:
 
-		int64_t childId = internalChild(pageBuf, childIdx);
+		int64_t childId = internalChild(pageBuf, childIndex);
 		bool removed = eraseFromNode(childId, key);
 
 		if (removed) {
-			// Check if child is underfull
-			std::vector<std::byte> childPage(PAGE_SIZE);
-			readPage(childId, childPage);
-			auto* childPageBuf = childPage.data();
-			size_t minKeys = (pageType(childPageBuf) == 'L') ? LEAF_MIN : INTERNAL_MIN;
-			if (pageNumKeys(childPageBuf) < minKeys && nodeId != childId) {
-				borrowOrMerge(nodeId, childIdx);
+			// Re-read the child and check if it is now underfull
+			std::vector<std::byte> childPageBuffer(PAGE_SIZE);
+			readPage(childId, childPageBuffer);
+			auto* childPageBuf = childPageBuffer.data();
+			size_t minimumKeys = (pageType(childPageBuf) == 'L') ? LEAF_MIN : INTERNAL_MIN;
+			if (pageNumKeys(childPageBuf) < minimumKeys && nodeId != childId) {
+				borrowOrMerge(nodeId, childIndex);
 			}
 		}
 
 		return removed;
 	}
 
-	void BPlusTree::borrowOrMerge(int64_t parentId, size_t idx) {
-		std::vector<std::byte> parentPage(PAGE_SIZE);
-		readPage(parentId, parentPage);
-		auto* parentBuf = parentPage.data();
-		uint16_t pn = pageNumKeys(parentBuf);
+	void BPlusTree::borrowOrMerge(int64_t parentId, size_t childIndex) {
+		// Rebalance after a deletion. The child at childIndex is underfull.
+		// Strategy (in order):
+		//   1. Try to borrow one entry from the left sibling (if it has extras).
+		//   2. Try to borrow one entry from the right sibling.
+		//   3. Merge the underfull child with one of its siblings.
+		//
+		// After borrowing, the separator key in the parent is updated to reflect
+		// the new boundary. After merging, the separator key is removed from the parent.
+		std::vector<std::byte> parentPageBuffer(PAGE_SIZE);
+		readPage(parentId, parentPageBuffer);
+		auto* parentPageBuf = parentPageBuffer.data();
+		uint16_t parentKeyCount = pageNumKeys(parentPageBuf);
 
-		int64_t leftId = (idx > 0) ? internalChild(parentBuf, idx - 1) : -1;
-		int64_t rightId = (idx + 1 <= pn) ? internalChild(parentBuf, idx + 1) : -1;
-		int64_t childId = internalChild(parentBuf, idx);
+		int64_t leftSiblingId = (childIndex > 0)
+			? internalChild(parentPageBuf, childIndex - 1) : -1;
+		int64_t rightSiblingId = (childIndex + 1 <= parentKeyCount)
+			? internalChild(parentPageBuf, childIndex + 1) : -1;
+		int64_t underfullChildId = internalChild(parentPageBuf, childIndex);
 
-		std::vector<std::byte> childPage(PAGE_SIZE);
-		readPage(childId, childPage);
-		auto* childBuf = childPage.data();
-		bool isLeaf = (pageType(childBuf) == 'L');
+		std::vector<std::byte> childPageBuffer(PAGE_SIZE);
+		readPage(underfullChildId, childPageBuffer);
+		auto* childPageBuf = childPageBuffer.data();
+		bool childIsLeaf = (pageType(childPageBuf) == 'L');
 
-		// Read left/right pages early so pageBuffers are in scope for all paths
-		std::vector<std::byte> leftPage(PAGE_SIZE);
-		std::vector<std::byte> rightPage(PAGE_SIZE);
-		auto* leftBuf = (leftId >= 0) ? (readPage(leftId, leftPage), leftPage.data()) : nullptr;
-		auto* rightBuf = (rightId >= 0) ? (readPage(rightId, rightPage), rightPage.data()) : nullptr;
+		// Read sibling pages now so buffers stay alive for all code paths
+		std::vector<std::byte> leftSiblingBuffer(PAGE_SIZE);
+		std::vector<std::byte> rightSiblingBuffer(PAGE_SIZE);
+		auto* leftSiblingBuf = (leftSiblingId >= 0)
+			? (readPage(leftSiblingId, leftSiblingBuffer), leftSiblingBuffer.data()) : nullptr;
+		auto* rightSiblingBuf = (rightSiblingId >= 0)
+			? (readPage(rightSiblingId, rightSiblingBuffer), rightSiblingBuffer.data()) : nullptr;
 
-		// Try borrow from left sibling
-		if (leftId >= 0 && leftBuf && pageNumKeys(leftBuf) > (isLeaf ? LEAF_MIN : INTERNAL_MIN)) {
-			if (isLeaf) {
-				std::string lastKey;
-				BTreeLeafValue lastVal;
-				leafGetEntry(leftBuf, pageNumKeys(leftBuf) - 1, lastKey, lastVal);
+		uint16_t minimumKeys = childIsLeaf ? LEAF_MIN : INTERNAL_MIN;
 
-				std::string shiftKey;
-				BTreeLeafValue shiftVal;
-				for (uint16_t i = pageNumKeys(childBuf); i > 0; --i) {
-					leafGetEntry(childBuf, i - 1, shiftKey, shiftVal);
-					leafSetEntry(childBuf, i, shiftKey, shiftVal);
+		// ---------- Strategy 1: borrow from left sibling ----------
+		if (leftSiblingId >= 0 && leftSiblingBuf
+			&& pageNumKeys(leftSiblingBuf) > minimumKeys) {
+
+			if (childIsLeaf) {
+				// Move the last entry of left sibling to the front of this child
+				std::string borrowedKey;
+				BTreeLeafValue borrowedValue;
+				leafGetEntry(leftSiblingBuf, pageNumKeys(leftSiblingBuf) - 1, borrowedKey, borrowedValue);
+
+				// Shift all entries in child right by one
+				std::string shiftedKey;
+				BTreeLeafValue shiftedValue;
+				for (uint16_t i = pageNumKeys(childPageBuf); i > 0; --i) {
+					leafGetEntry(childPageBuf, i - 1, shiftedKey, shiftedValue);
+					leafSetEntry(childPageBuf, i, shiftedKey, shiftedValue);
 				}
-				leafSetEntry(childBuf, 0, lastKey, lastVal);
-				pageNumKeys(childBuf)++;
-				pageNumKeys(leftBuf)--;
-				std::string newSep;
-				BTreeLeafValue newDummy;
-				leafGetEntry(childBuf, 0, newSep, newDummy);
-				std::memcpy(internalKeyPtr(parentBuf, idx), newSep.data(),
-					std::min(newSep.size(), KEY_SIZE - 1));
+				leafSetEntry(childPageBuf, 0, borrowedKey, borrowedValue);
+				pageNumKeys(childPageBuf)++;
+				pageNumKeys(leftSiblingBuf)--;
+
+				// Update parent separator: new boundary = first key of child
+				std::string newSeparatorKey;
+				BTreeLeafValue dummyValue;
+				leafGetEntry(childPageBuf, 0, newSeparatorKey, dummyValue);
+				std::memcpy(
+					internalKeyPtr(parentPageBuf, childIndex),
+					newSeparatorKey.data(),
+					std::min(newSeparatorKey.size(), KEY_SIZE - 1)
+				);
 			} else {
-				auto parentKey = extractKey(internalKeyPtr(parentBuf, idx));
-				for (uint16_t i = pageNumKeys(childBuf); i > 0; --i) {
-					internalChild(childBuf, i) = internalChild(childBuf, i - 1);
-					std::memcpy(internalKeyPtr(childBuf, i), internalKeyPtr(childBuf, i - 1), KEY_SIZE);
+				// Borrow the rightmost child and separator key from left sibling
+				auto parentSeparator = extractKey(internalKeyPtr(parentPageBuf, childIndex));
+
+				// Shift all children/keys in the underfull node right
+				for (uint16_t i = pageNumKeys(childPageBuf); i > 0; --i) {
+					internalChild(childPageBuf, i) = internalChild(childPageBuf, i - 1);
+					std::memcpy(
+						internalKeyPtr(childPageBuf, i),
+						internalKeyPtr(childPageBuf, i - 1),
+						KEY_SIZE
+					);
 				}
-				internalChild(childBuf, 0) = internalChild(leftBuf, pageNumKeys(leftBuf));
-				uint16_t lk = pageNumKeys(leftBuf);
-				std::memcpy(internalKeyPtr(childBuf, 1), internalKeyPtr(parentBuf, idx), KEY_SIZE);
-				std::memcpy(internalKeyPtr(parentBuf, idx), internalKeyPtr(leftBuf, lk), KEY_SIZE);
-				internalChild(childBuf, 1) = internalChild(leftBuf, lk);
-				pageNumKeys(childBuf)++;
-				pageNumKeys(leftBuf)--;
+				// Move left sibling's rightmost child to be child[0] of underfull node
+				internalChild(childPageBuf, 0) = internalChild(leftSiblingBuf, pageNumKeys(leftSiblingBuf));
+
+				uint16_t leftSiblingKeyCount = pageNumKeys(leftSiblingBuf);
+				// Pull parent separator down as child's first key
+				std::memcpy(
+					internalKeyPtr(childPageBuf, 1),
+					internalKeyPtr(parentPageBuf, childIndex),
+					KEY_SIZE
+				);
+				// Push left sibling's rightmost key up to parent separator
+				std::memcpy(
+					internalKeyPtr(parentPageBuf, childIndex),
+					internalKeyPtr(leftSiblingBuf, leftSiblingKeyCount),
+					KEY_SIZE
+				);
+				internalChild(childPageBuf, 1) = internalChild(leftSiblingBuf, leftSiblingKeyCount);
+				pageNumKeys(childPageBuf)++;
+				pageNumKeys(leftSiblingBuf)--;
 			}
-			writePage(leftId, leftPage);
-			writePage(childId, childPage);
-			writePage(parentId, parentPage);
+			writePage(leftSiblingId, leftSiblingBuffer);
+			writePage(underfullChildId, childPageBuffer);
+			writePage(parentId, parentPageBuffer);
 			return;
 		}
 
-		// Try borrow from right sibling
-		if (rightId >= 0 && rightBuf && pageNumKeys(rightBuf) > (isLeaf ? LEAF_MIN : INTERNAL_MIN)) {
-			if (isLeaf) {
-				std::string firstKey;
-				BTreeLeafValue firstVal;
-				leafGetEntry(rightBuf, 0, firstKey, firstVal);
-				uint16_t cn = pageNumKeys(childBuf);
-				leafSetEntry(childBuf, cn, firstKey, firstVal);
-				pageNumKeys(childBuf)++;
-				for (uint16_t i = 0; i + 1 < pageNumKeys(rightBuf); ++i) {
-					std::string shiftKey;
-					BTreeLeafValue shiftValue;
-					leafGetEntry(rightBuf, i + 1, shiftKey, shiftValue);
-					leafSetEntry(rightBuf, i, shiftKey, shiftValue);
+		// ---------- Strategy 2: borrow from right sibling ----------
+		if (rightSiblingId >= 0 && rightSiblingBuf
+			&& pageNumKeys(rightSiblingBuf) > minimumKeys) {
+
+			if (childIsLeaf) {
+				// Move the first entry of right sibling to the end of this child
+				std::string borrowedKey;
+				BTreeLeafValue borrowedValue;
+				leafGetEntry(rightSiblingBuf, 0, borrowedKey, borrowedValue);
+
+				uint16_t childKeyCount = pageNumKeys(childPageBuf);
+				leafSetEntry(childPageBuf, childKeyCount, borrowedKey, borrowedValue);
+				pageNumKeys(childPageBuf)++;
+
+				// Shift entries in right sibling left to fill the gap
+				for (uint16_t i = 0; i + 1 < pageNumKeys(rightSiblingBuf); ++i) {
+					std::string shiftedKey;
+					BTreeLeafValue shiftedValue;
+					leafGetEntry(rightSiblingBuf, i + 1, shiftedKey, shiftedValue);
+					leafSetEntry(rightSiblingBuf, i, shiftedKey, shiftedValue);
 				}
-				pageNumKeys(rightBuf)--;
-				std::string newSep;
-				BTreeLeafValue newDummy;
-				leafGetEntry(rightBuf, 0, newSep, newDummy);
-				std::memcpy(internalKeyPtr(parentBuf, idx + 1), newSep.data(),
-					std::min(newSep.size(), KEY_SIZE - 1));
+				pageNumKeys(rightSiblingBuf)--;
+
+				// Update parent separator: new boundary = first key of right sibling
+				std::string newSeparatorKey;
+				BTreeLeafValue dummyValue;
+				leafGetEntry(rightSiblingBuf, 0, newSeparatorKey, dummyValue);
+				std::memcpy(
+					internalKeyPtr(parentPageBuf, childIndex + 1),
+					newSeparatorKey.data(),
+					std::min(newSeparatorKey.size(), KEY_SIZE - 1)
+				);
 			} else {
-				uint16_t cn = pageNumKeys(childBuf);
-				internalChild(childBuf, cn + 1) = internalChild(rightBuf, 0);
-				std::memcpy(internalKeyPtr(childBuf, cn + 1), internalKeyPtr(parentBuf, idx + 1), KEY_SIZE);
-				std::memcpy(internalKeyPtr(parentBuf, idx + 1), internalKeyPtr(rightBuf, 1), KEY_SIZE);
-				internalChild(rightBuf, 0) = internalChild(rightBuf, 1);
-				for (uint16_t i = 1; i < pageNumKeys(rightBuf); ++i) {
-					std::memcpy(internalKeyPtr(rightBuf, i), internalKeyPtr(rightBuf, i + 1), KEY_SIZE);
-					internalChild(rightBuf, i) = internalChild(rightBuf, i + 1);
+				uint16_t childKeyCount = pageNumKeys(childPageBuf);
+				// Move right sibling's leftmost child to end of child
+				internalChild(childPageBuf, childKeyCount + 1) = internalChild(rightSiblingBuf, 0);
+				// Pull parent separator down
+				std::memcpy(
+					internalKeyPtr(childPageBuf, childKeyCount + 1),
+					internalKeyPtr(parentPageBuf, childIndex + 1),
+					KEY_SIZE
+				);
+				// Push right sibling's leftmost key up to parent separator
+				std::memcpy(
+					internalKeyPtr(parentPageBuf, childIndex + 1),
+					internalKeyPtr(rightSiblingBuf, 1),
+					KEY_SIZE
+				);
+				internalChild(rightSiblingBuf, 0) = internalChild(rightSiblingBuf, 1);
+
+				// Shift right sibling left to fill the gap
+				for (uint16_t i = 1; i < pageNumKeys(rightSiblingBuf); ++i) {
+					std::memcpy(
+						internalKeyPtr(rightSiblingBuf, i),
+						internalKeyPtr(rightSiblingBuf, i + 1),
+						KEY_SIZE
+					);
+					internalChild(rightSiblingBuf, i) = internalChild(rightSiblingBuf, i + 1);
 				}
-				pageNumKeys(childBuf)++;
-				pageNumKeys(rightBuf)--;
+				pageNumKeys(childPageBuf)++;
+				pageNumKeys(rightSiblingBuf)--;
 			}
-			writePage(rightId, rightPage);
-			writePage(childId, childPage);
-			writePage(parentId, parentPage);
+			writePage(rightSiblingId, rightSiblingBuffer);
+			writePage(underfullChildId, childPageBuffer);
+			writePage(parentId, parentPageBuffer);
 			return;
 		}
 
-		// Merge with a sibling
-		if (leftId >= 0 && leftBuf) {
-			if (isLeaf) {
-				uint16_t ln = pageNumKeys(leftBuf);
-				uint16_t cn = pageNumKeys(childBuf);
-				for (uint16_t i = 0; i < cn; ++i) {
+		// ---------- Strategy 3: merge with a sibling ----------
+		if (leftSiblingId >= 0 && leftSiblingBuf) {
+			// Merge child into left sibling
+			if (childIsLeaf) {
+				uint16_t leftKeyCount = pageNumKeys(leftSiblingBuf);
+				uint16_t childKeyCount = pageNumKeys(childPageBuf);
+				// Append all child entries to left sibling
+				for (uint16_t i = 0; i < childKeyCount; ++i) {
 					std::string entryKey;
 					BTreeLeafValue entryValue;
-					leafGetEntry(childBuf, i, entryKey, entryValue);
-					leafSetEntry(leftBuf, ln + i, entryKey, entryValue);
+					leafGetEntry(childPageBuf, i, entryKey, entryValue);
+					leafSetEntry(leftSiblingBuf, leftKeyCount + i, entryKey, entryValue);
 				}
-				pageNumKeys(leftBuf) = ln + cn;
-				pageNextLeaf(leftBuf) = pageNextLeaf(childBuf);
-				for (uint16_t i = static_cast<uint16_t>(idx); i < pn; ++i) {
-					std::memcpy(internalKeyPtr(parentBuf, i), internalKeyPtr(parentBuf, i + 1), KEY_SIZE);
-					internalChild(parentBuf, i) = internalChild(parentBuf, i + 1);
+				pageNumKeys(leftSiblingBuf) = leftKeyCount + childKeyCount;
+				// Update leaf chain: skip the now-merged child
+				pageNextLeaf(leftSiblingBuf) = pageNextLeaf(childPageBuf);
+				// Remove separator key and child pointer from parent (shift left)
+				for (uint16_t i = static_cast<uint16_t>(childIndex); i < parentKeyCount; ++i) {
+					std::memcpy(
+						internalKeyPtr(parentPageBuf, i),
+						internalKeyPtr(parentPageBuf, i + 1),
+						KEY_SIZE
+					);
+					internalChild(parentPageBuf, i) = internalChild(parentPageBuf, i + 1);
 				}
-				pageNumKeys(parentBuf) = pn - 1;
+				pageNumKeys(parentPageBuf) = parentKeyCount - 1;
 			} else {
-				uint16_t ln = pageNumKeys(leftBuf);
-				std::memcpy(internalKeyPtr(leftBuf, ln + 1), internalKeyPtr(parentBuf, idx), KEY_SIZE);
-				internalChild(leftBuf, ln + 1) = internalChild(childBuf, 0);
-				uint16_t cn = pageNumKeys(childBuf);
-				for (uint16_t i = 1; i <= cn; ++i) {
-					std::memcpy(internalKeyPtr(leftBuf, ln + 1 + i), internalKeyPtr(childBuf, i), KEY_SIZE);
-					internalChild(leftBuf, ln + 1 + i) = internalChild(childBuf, i);
+				uint16_t leftKeyCount = pageNumKeys(leftSiblingBuf);
+				// Pull parent separator down into left sibling
+				std::memcpy(
+					internalKeyPtr(leftSiblingBuf, leftKeyCount + 1),
+					internalKeyPtr(parentPageBuf, childIndex),
+					KEY_SIZE
+				);
+				internalChild(leftSiblingBuf, leftKeyCount + 1) = internalChild(childPageBuf, 0);
+
+				uint16_t childKeyCount = pageNumKeys(childPageBuf);
+				// Append all child keys and children to left sibling
+				for (uint16_t i = 1; i <= childKeyCount; ++i) {
+					std::memcpy(
+						internalKeyPtr(leftSiblingBuf, leftKeyCount + 1 + i),
+						internalKeyPtr(childPageBuf, i),
+						KEY_SIZE
+					);
+					internalChild(leftSiblingBuf, leftKeyCount + 1 + i) = internalChild(childPageBuf, i);
 				}
-				pageNumKeys(leftBuf) = ln + 1 + cn;
-				for (uint16_t i = static_cast<uint16_t>(idx); i < pn; ++i) {
-					std::memcpy(internalKeyPtr(parentBuf, i), internalKeyPtr(parentBuf, i + 1), KEY_SIZE);
-					internalChild(parentBuf, i) = internalChild(parentBuf, i + 1);
+				pageNumKeys(leftSiblingBuf) = leftKeyCount + 1 + childKeyCount;
+				// Remove separator and child pointer from parent
+				for (uint16_t i = static_cast<uint16_t>(childIndex); i < parentKeyCount; ++i) {
+					std::memcpy(
+						internalKeyPtr(parentPageBuf, i),
+						internalKeyPtr(parentPageBuf, i + 1),
+						KEY_SIZE
+					);
+					internalChild(parentPageBuf, i) = internalChild(parentPageBuf, i + 1);
 				}
-				pageNumKeys(parentBuf) = pn - 1;
+				pageNumKeys(parentPageBuf) = parentKeyCount - 1;
 			}
-			writePage(leftId, leftPage);
-			writePage(parentId, parentPage);
-		} else if (rightId >= 0 && rightBuf) {
-			if (isLeaf) {
-				uint16_t cn = pageNumKeys(childBuf);
-				uint16_t rn = pageNumKeys(rightBuf);
-				for (uint16_t i = rn; i > 0; --i) {
+			writePage(leftSiblingId, leftSiblingBuffer);
+			writePage(parentId, parentPageBuffer);
+		} else if (rightSiblingId >= 0 && rightSiblingBuf) {
+			// Merge child into right sibling
+			if (childIsLeaf) {
+				uint16_t childKeyCount = pageNumKeys(childPageBuf);
+				uint16_t rightKeyCount = pageNumKeys(rightSiblingBuf);
+				// Shift right sibling's entries right to make room at the front
+				for (uint16_t i = rightKeyCount; i > 0; --i) {
 					std::string entryKey;
 					BTreeLeafValue entryValue;
-					leafGetEntry(rightBuf, i - 1, entryKey, entryValue);
-					leafSetEntry(rightBuf, cn + i - 1, entryKey, entryValue);
+					leafGetEntry(rightSiblingBuf, i - 1, entryKey, entryValue);
+					leafSetEntry(rightSiblingBuf, childKeyCount + i - 1, entryKey, entryValue);
 				}
-				for (uint16_t i = 0; i < cn; ++i) {
+				// Copy child entries into the front of right sibling
+				for (uint16_t i = 0; i < childKeyCount; ++i) {
 					std::string entryKey;
 					BTreeLeafValue entryValue;
-					leafGetEntry(childBuf, i, entryKey, entryValue);
-					leafSetEntry(rightBuf, i, entryKey, entryValue);
+					leafGetEntry(childPageBuf, i, entryKey, entryValue);
+					leafSetEntry(rightSiblingBuf, i, entryKey, entryValue);
 				}
-				pageNumKeys(rightBuf) = cn + rn;
-				pagePrevLeaf(rightBuf) = pagePrevLeaf(childBuf);
-				for (uint16_t i = static_cast<uint16_t>(idx + 1); i < pn; ++i) {
-					std::memcpy(internalKeyPtr(parentBuf, i), internalKeyPtr(parentBuf, i + 1), KEY_SIZE);
-					internalChild(parentBuf, i) = internalChild(parentBuf, i + 1);
+				pageNumKeys(rightSiblingBuf) = childKeyCount + rightKeyCount;
+				// Update leaf chain backward pointer
+				pagePrevLeaf(rightSiblingBuf) = pagePrevLeaf(childPageBuf);
+				// Remove separator and child pointer from parent
+				for (uint16_t i = static_cast<uint16_t>(childIndex + 1); i < parentKeyCount; ++i) {
+					std::memcpy(
+						internalKeyPtr(parentPageBuf, i),
+						internalKeyPtr(parentPageBuf, i + 1),
+						KEY_SIZE
+					);
+					internalChild(parentPageBuf, i) = internalChild(parentPageBuf, i + 1);
 				}
-				pageNumKeys(parentBuf) = pn - 1;
+				pageNumKeys(parentPageBuf) = parentKeyCount - 1;
 			} else {
-				uint16_t cn = pageNumKeys(childBuf);
-				std::memcpy(internalKeyPtr(rightBuf, cn + 1), internalKeyPtr(parentBuf, idx + 1), KEY_SIZE);
-				internalChild(rightBuf, cn + 1) = internalChild(rightBuf, 0);
-				for (uint16_t i = 1; i <= cn; ++i) {
-					std::memcpy(internalKeyPtr(rightBuf, cn + 1 + i), internalKeyPtr(childBuf, i), KEY_SIZE);
-					internalChild(rightBuf, cn + 1 + i) = internalChild(childBuf, i);
+				uint16_t childKeyCount = pageNumKeys(childPageBuf);
+				// Pull parent separator down into right sibling (shift right sibling's first child)
+				std::memcpy(
+					internalKeyPtr(rightSiblingBuf, childKeyCount + 1),
+					internalKeyPtr(parentPageBuf, childIndex + 1),
+					KEY_SIZE
+				);
+				internalChild(rightSiblingBuf, childKeyCount + 1) = internalChild(rightSiblingBuf, 0);
+
+				// Prepend child's children and keys to right sibling
+				for (uint16_t i = 1; i <= childKeyCount; ++i) {
+					std::memcpy(
+						internalKeyPtr(rightSiblingBuf, childKeyCount + 1 + i),
+						internalKeyPtr(childPageBuf, i),
+						KEY_SIZE
+					);
+					internalChild(rightSiblingBuf, childKeyCount + 1 + i) = internalChild(childPageBuf, i);
 				}
-				internalChild(rightBuf, 0) = internalChild(childBuf, 0);
-				pageNumKeys(rightBuf) = cn + 1 + pageNumKeys(rightBuf);
-				for (uint16_t i = static_cast<uint16_t>(idx + 1); i < pn; ++i) {
-					std::memcpy(internalKeyPtr(parentBuf, i), internalKeyPtr(parentBuf, i + 1), KEY_SIZE);
-					internalChild(parentBuf, i) = internalChild(parentBuf, i + 1);
+				internalChild(rightSiblingBuf, 0) = internalChild(childPageBuf, 0);
+				pageNumKeys(rightSiblingBuf) = childKeyCount + 1 + pageNumKeys(rightSiblingBuf);
+				// Remove separator and child pointer from parent
+				for (uint16_t i = static_cast<uint16_t>(childIndex + 1); i < parentKeyCount; ++i) {
+					std::memcpy(
+						internalKeyPtr(parentPageBuf, i),
+						internalKeyPtr(parentPageBuf, i + 1),
+						KEY_SIZE
+					);
+					internalChild(parentPageBuf, i) = internalChild(parentPageBuf, i + 1);
 				}
-				pageNumKeys(parentBuf) = pn - 1;
+				pageNumKeys(parentPageBuf) = parentKeyCount - 1;
 			}
-			writePage(rightId, rightPage);
-			writePage(parentId, parentPage);
+			writePage(rightSiblingId, rightSiblingBuffer);
+			writePage(parentId, parentPageBuffer);
 		}
 	}
 

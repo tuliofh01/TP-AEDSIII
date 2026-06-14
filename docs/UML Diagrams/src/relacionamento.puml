@@ -1,0 +1,96 @@
+@startuml relacionamento
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 13
+skinparam roundCorner 15
+
+title Diagrama de Relacionamento - Entidades do Sistema
+
+entity "UserRecord\n(Aluno/Professor)" as user {
+    + userId : int32_t <<PK>>
+    --
+    + name : char[50]
+    + email : char[30]
+    + cpf : char[15] <<UNIQUE>>
+    + password : uint16_t
+    + status : char
+}
+
+entity "StudentRecord" as student {
+    + userId : int32_t <<FK>>
+    --
+    + birthDate : uint32_t
+    + courseName : char[30]
+    + enrollmentYear : int32_t
+}
+
+entity "TeacherRecord" as teacher {
+    + userId : int32_t <<FK>>
+    --
+    + department : char[30]
+    + specialization : char[30]
+    + hireDate : uint32_t
+}
+
+entity "SubjectRecord" as subject {
+    + subjectId : int32_t <<PK>>
+    --
+    + name : char[50]
+    + code : char[20] <<UNIQUE>>
+    + credits : int32_t
+    + teacherId : int32_t <<FK>>
+    + status : char
+}
+
+entity "Enrollment\n(BTreeLeafValue)" as enrollment {
+    + studentId : int32_t <<FK>>
+    + subjectId : int32_t <<FK>>
+    + teacherId : int32_t <<FK>>
+    + grade : uint8_t
+    + semester : char[12]
+    + isApproved() : bool
+    --
+    <<PK = (studentId, subjectId)>>
+}
+
+entity "IndexCtrl\n(Hash Map)" as index {
+    + key : string
+    --
+    + chunkIndex : uint32_t
+    + recordIndex : uint32_t
+}
+
+entity "BPlusTree" as btree {
+    + key : string(20)
+    --
+    + value : BTreeLeafValue(25)
+    + folhas encadeadas
+}
+
+' Relationships
+student ||--|| user : "herda"
+teacher ||--|| user : "herda"
+teacher ||--o{ subject : "leciona"
+subject ||--o{ enrollment : "recebe"
+student ||--o{ enrollment : "realiza"
+user ||--o{ enrollment : "FK via studentId/teacherId"
+
+index ||--|| student : "(STU:id) -> (chunk, index)"
+index ||--|| teacher : "(TCH:id) -> (chunk, index)"
+index ||--|| subject : "(SUB:id) -> (chunk, index)"
+index ||--|| user : "(CPF:cpf:TYPE) -> (chunk, index)"
+
+btree ||--|| enrollment : "(ENR:STU:id:SUB:id) -> value"
+
+note top of enrollment
+  Chave na B+ Tree:
+  "ENR:STU:0001:SUB:0001"
+  Valor: BTreeLeafValue (25B)
+end note
+
+note right of index
+  Indice hash em memoria:
+  DJB2 hash, case-insensitive
+  Persistido em records.idx
+end note
+
+@enduml

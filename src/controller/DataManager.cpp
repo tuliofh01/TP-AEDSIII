@@ -183,68 +183,70 @@ namespace project_controller {
 	// Chunk helpers
 	// ========================================
 	int DataManager::chunkIndexForType(char type) const {
-		for (int i = 0; i < 4; ++i)
-			if (chunks_[i].type == type) return i;
+		for (auto chunkIndex = 0; chunkIndex < 4; ++chunkIndex) {
+			if (chunks_[chunkIndex].type == type) return chunkIndex;
+		}
 		return -1;
 	}
 
-	bool DataManager::writeToChunk(int ci, size_t recIdx, const std::vector<std::byte>& data) {
-		if (recIdx >= static_cast<size_t>(chunks_[ci].capacity)) return false;
-		size_t off = chunks_[ci].offset + recIdx * chunks_[ci].recordSize;
-		dataFile_.seekp(static_cast<std::streamoff>(off), std::ios::beg);
-		dataFile_.write(reinterpret_cast<const char*>(data.data()), chunks_[ci].recordSize);
+	bool DataManager::writeToChunk(int chunkIndex, size_t recordIndex, const std::vector<std::byte>& data) {
+		if (recordIndex >= static_cast<size_t>(chunks_[chunkIndex].capacity)) return false;
+		auto byteOffset = chunks_[chunkIndex].offset + recordIndex * chunks_[chunkIndex].recordSize;
+		dataFile_.seekp(static_cast<std::streamoff>(byteOffset), std::ios::beg);
+		dataFile_.write(reinterpret_cast<const char*>(data.data()), chunks_[chunkIndex].recordSize);
 		return dataFile_.good();
 	}
 
-	std::vector<std::byte> DataManager::readFromChunk(int ci, size_t recIdx) const {
-		std::vector<std::byte> buf(chunks_[ci].recordSize);
-		size_t off = chunks_[ci].offset + recIdx * chunks_[ci].recordSize;
-		auto& f = const_cast<std::fstream&>(dataFile_);
-		f.seekg(static_cast<std::streamoff>(off), std::ios::beg);
-		f.read(reinterpret_cast<char*>(buf.data()), chunks_[ci].recordSize);
-		return buf;
+	std::vector<std::byte> DataManager::readFromChunk(int chunkIndex, size_t recordIndex) const {
+		std::vector<std::byte> byteBuffer(chunks_[chunkIndex].recordSize);
+		auto byteOffset = chunks_[chunkIndex].offset + recordIndex * chunks_[chunkIndex].recordSize;
+		auto& writableFile = const_cast<std::fstream&>(dataFile_);
+		writableFile.seekg(static_cast<std::streamoff>(byteOffset), std::ios::beg);
+		writableFile.read(reinterpret_cast<char*>(byteBuffer.data()), chunks_[chunkIndex].recordSize);
+		return byteBuffer;
 	}
 
-	size_t DataManager::appendToChunk(int ci, const std::vector<std::byte>& data) {
-		if (chunks_[ci].used >= chunks_[ci].capacity) {
-			if (!const_cast<DataManager*>(this)->reallocateChunk(ci))
+	size_t DataManager::appendToChunk(int chunkIndex, const std::vector<std::byte>& data) {
+		if (chunks_[chunkIndex].used >= chunks_[chunkIndex].capacity) {
+			if (!const_cast<DataManager*>(this)->reallocateChunk(chunkIndex))
 				return static_cast<size_t>(-1);
 		}
 
-		size_t idx = chunks_[ci].used;
-		if (writeToChunk(ci, idx, data)) {
-			chunks_[ci].used++;
+		auto recordIndex = static_cast<size_t>(chunks_[chunkIndex].used);
+		if (writeToChunk(chunkIndex, recordIndex, data)) {
+			chunks_[chunkIndex].used++;
 			writeHeader();
-			return idx;
+			return recordIndex;
 		}
 		return static_cast<size_t>(-1);
 	}
 
-	bool DataManager::markDeletedInChunk(int ci, size_t recIdx) {
-		if (recIdx >= static_cast<size_t>(chunks_[ci].used)) return false;
-		size_t off = chunks_[ci].offset + recIdx * chunks_[ci].recordSize;
+	bool DataManager::markDeletedInChunk(int chunkIndex, size_t recordIndex) {
+		if (recordIndex >= static_cast<size_t>(chunks_[chunkIndex].used)) return false;
+		auto byteOffset = chunks_[chunkIndex].offset + recordIndex * chunks_[chunkIndex].recordSize;
 		char deleted = static_cast<char>(project_utility::RecStatus::Deletado);
-		dataFile_.seekp(static_cast<std::streamoff>(off), std::ios::beg);
+		dataFile_.seekp(static_cast<std::streamoff>(byteOffset), std::ios::beg);
 		dataFile_.write(&deleted, 1);
 		return dataFile_.good();
 	}
 
-	bool DataManager::isDeletedInChunk(int ci, size_t recIdx) const {
-		if (recIdx >= static_cast<size_t>(chunks_[ci].used)) return true;
-		size_t off = chunks_[ci].offset + recIdx * chunks_[ci].recordSize;
-		char status = 0;
-		auto& f = const_cast<std::fstream&>(dataFile_);
-		f.seekg(static_cast<std::streamoff>(off), std::ios::beg);
-		f.read(&status, 1);
-		return status == static_cast<char>(project_utility::RecStatus::Deletado);
+	bool DataManager::isDeletedInChunk(int chunkIndex, size_t recordIndex) const {
+		if (recordIndex >= static_cast<size_t>(chunks_[chunkIndex].used)) return true;
+		auto byteOffset = chunks_[chunkIndex].offset + recordIndex * chunks_[chunkIndex].recordSize;
+		char statusByte = 0;
+		auto& writableFile = const_cast<std::fstream&>(dataFile_);
+		writableFile.seekg(static_cast<std::streamoff>(byteOffset), std::ios::beg);
+		writableFile.read(&statusByte, 1);
+		return statusByte == static_cast<char>(project_utility::RecStatus::Deletado);
 	}
 
-	uint32_t DataManager::countActiveInChunk(int ci) const {
-		uint32_t count = 0;
-		for (size_t i = 0; i < static_cast<size_t>(chunks_[ci].used); ++i) {
-			if (!isDeletedInChunk(ci, i)) ++count;
+	uint32_t DataManager::countActiveInChunk(int chunkIndex) const {
+		uint32_t activeCount = 0;
+		auto totalRecords = static_cast<size_t>(chunks_[chunkIndex].used);
+		for (size_t recordOffset = 0; recordOffset < totalRecords; ++recordOffset) {
+			if (!isDeletedInChunk(chunkIndex, recordOffset)) ++activeCount;
 		}
-		return count;
+		return activeCount;
 	}
 
 	// ========================================
@@ -349,6 +351,17 @@ namespace project_controller {
 			return false;
 		}
 
+		if (cpf.empty()) {
+			lastError_ = "CPF nao pode ser vazio";
+			return false;
+		}
+
+		// Reject duplicate CPF: look up the CPF index for students
+		if (indexCtrl_.lookup(std::string(IDX_CPF) + cpf + IDX_CPF_STU).has_value()) {
+			lastError_ = "CPF ja cadastrado para outro estudante";
+			return false;
+		}
+
 		StudentRecord rec;
 		rec.type = project_utility::CHUNK_STUDENT;
 		rec.password = password;
@@ -415,6 +428,24 @@ namespace project_controller {
 		return scanAll<project_model::Student>(project_utility::CHUNK_STUDENT);
 	}
 
+	auto DataManager::updateStudent(int32_t studentId, const project_model::StudentRecord& updatedRecord) -> bool {
+		using namespace project_model;
+
+		auto indexLookup = indexCtrl_.lookup(std::string(IDX_STU) + std::to_string(studentId));
+		if (!indexLookup) {
+			lastError_ = "Estudante nao encontrado: " + std::to_string(studentId);
+			return false;
+		}
+
+		auto serializedBytes = serializeRecord(updatedRecord);
+		if (!writeToChunk(CHUNK_STU, indexLookup->recordIndex, serializedBytes)) {
+			lastError_ = "Erro ao atualizar estudante";
+			return false;
+		}
+
+		return true;
+	}
+
 	// ========================================
 	// Teacher CRUD
 	// ========================================
@@ -428,6 +459,17 @@ namespace project_controller {
 
 		if (name.empty()) {
 			lastError_ = "Nome nao pode ser vazio";
+			return false;
+		}
+
+		if (cpf.empty()) {
+			lastError_ = "CPF nao pode ser vazio";
+			return false;
+		}
+
+		// Reject duplicate CPF: look up the CPF index for teachers
+		if (indexCtrl_.lookup(std::string(IDX_CPF) + cpf + IDX_CPF_TCH).has_value()) {
+			lastError_ = "CPF ja cadastrado para outro professor";
 			return false;
 		}
 
@@ -496,6 +538,24 @@ namespace project_controller {
 		return scanAll<project_model::Teacher>(project_utility::CHUNK_TEACHER);
 	}
 
+	auto DataManager::updateTeacher(int32_t teacherId, const project_model::TeacherRecord& updatedRecord) -> bool {
+		using namespace project_model;
+
+		auto indexLookup = indexCtrl_.lookup(std::string(IDX_TCH) + std::to_string(teacherId));
+		if (!indexLookup) {
+			lastError_ = "Professor nao encontrado: " + std::to_string(teacherId);
+			return false;
+		}
+
+		auto serializedBytes = serializeRecord(updatedRecord);
+		if (!writeToChunk(CHUNK_TCH, indexLookup->recordIndex, serializedBytes)) {
+			lastError_ = "Erro ao atualizar professor";
+			return false;
+		}
+
+		return true;
+	}
+
 	// ========================================
 	// Subject CRUD
 	// ========================================
@@ -507,6 +567,12 @@ namespace project_controller {
 
 		if (name.empty()) {
 			lastError_ = "Nome nao pode ser vazio";
+			return false;
+		}
+
+		// Referential integrity: verify the referenced teacher exists
+		if (!indexCtrl_.lookup(std::string(IDX_TCH) + std::to_string(teacherId)).has_value()) {
+			lastError_ = "Professor nao encontrado (ID: " + std::to_string(teacherId) + ")";
 			return false;
 		}
 
@@ -570,6 +636,24 @@ namespace project_controller {
 		return scanAll<project_model::Subject>(project_utility::CHUNK_SUBJECT);
 	}
 
+	auto DataManager::updateSubject(int32_t subjectId, const project_model::SubjectRecord& updatedRecord) -> bool {
+		using namespace project_model;
+
+		auto indexLookup = indexCtrl_.lookup(std::string(IDX_SUB) + std::to_string(subjectId));
+		if (!indexLookup) {
+			lastError_ = "Disciplina nao encontrada: " + std::to_string(subjectId);
+			return false;
+		}
+
+		auto serializedBytes = serializeRecord(updatedRecord);
+		if (!writeToChunk(CHUNK_SUB, indexLookup->recordIndex, serializedBytes)) {
+			lastError_ = "Erro ao atualizar disciplina";
+			return false;
+		}
+
+		return true;
+	}
+
 	// ========================================
 	// Enrollment (via B+ Tree)
 	// ========================================
@@ -593,9 +677,27 @@ namespace project_controller {
 	{
 		using namespace project_model;
 
+		// Referential integrity: verify student exists
+		if (!indexCtrl_.lookup(std::string(IDX_STU) + std::to_string(studentId)).has_value()) {
+			lastError_ = "Estudante nao encontrado (ID: " + std::to_string(studentId) + ")";
+			return false;
+		}
+
+		// Referential integrity: verify subject exists
+		if (!indexCtrl_.lookup(std::string(IDX_SUB) + std::to_string(subjectId)).has_value()) {
+			lastError_ = "Disciplina nao encontrada (ID: " + std::to_string(subjectId) + ")";
+			return false;
+		}
+
+		// Referential integrity: verify teacher exists
+		if (!indexCtrl_.lookup(std::string(IDX_TCH) + std::to_string(teacherId)).has_value()) {
+			lastError_ = "Professor nao encontrado (ID: " + std::to_string(teacherId) + ")";
+			return false;
+		}
+
 		auto key = enrollmentKey(studentId, subjectId);
 
-		// Check if already enrolled
+		// Check if already enrolled (duplicate enrollment prevention)
 		if (btree_.search(key).has_value()) {
 			lastError_ = "Estudante ja matriculado nesta disciplina";
 			return false;

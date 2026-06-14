@@ -1,0 +1,77 @@
+@startuml fluxograma
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 12
+
+title Fluxograma do Sistema - GUI
+
+start
+:Inicializar Lua + HelloImGui;
+:Carregar ScriptArchive (scripts.bin);
+:Inicializar DataManager;
+:Inicializar FileManager;
+:Inicializar IndexCtrl;
+:Inicializar BPlusTree;
+
+if (Banco vazio?) then (sim)
+    :Popular dados de exemplo\n(3 professores, 5 alunos,\n6 disciplinas, 20 matriculas);
+else (nao)
+endif
+
+:Renderizar GUI via Lua;
+:Router seleciona view atual;
+
+while (Loop de eventos HelloImGui) is (ativo)
+    :Ler entrada do usuario;
+
+    if (View atual?) then (Login)
+        :Exibir formulario de login\n(CPF + senha);
+        if (Credenciais validas?) then (sim)
+            :Definir usuario logado\n(Tipo: Aluno/Professor);
+            :Navegar para MainMenu;
+        else (nao)
+            :Exibir erro de autenticacao;
+        endif
+
+    elseif (MainMenu) then
+        :Exibir estatisticas\ntotal de alunos,\nprofessores, disciplinas;
+        :Navegacao pelo menu lateral;
+
+    elseif (Listar Alunos) then
+        :Ler lista de alunos via DataManager;
+        :Exibir tabela com nomes;
+        if (Clicou em Editar?) then (sim)
+            :Exibir campos editaveis inline;
+            :Chamar updateStudent();
+        elseif (Clicou em Excluir?) then (sim)
+            :Confirmar exclusao;
+            :Chamar deleteStudent();
+        endif
+
+    elseif (Criar Aluno) then
+        :Exibir formulario\n(nome, email, cpf, curso...);
+        :Validar CPF duplicado;
+        if (CPF ja existe?) then (sim)
+            :Exibir erro;
+        else (nao)
+            :Chamar createStudent();
+        endif
+
+    elseif (Matricula) then
+        :Buscar aluno por ID;
+        :Buscar disciplina por ID;
+        :Verificar matricula duplicada;
+        if (Ja matriculado?) then (sim)
+            :Exibir erro;
+        else (nao)
+            :Chamar enrollStudent();
+        endif
+    endif
+
+    :Atualizar tela;
+endwhile (fechar janela)
+
+:Salvar indices (records.idx);
+:Fechar arquivo (records.dat);
+stop
+
+@enduml

@@ -8,16 +8,24 @@ package "GUI (C++ / HelloImGui)" {
     [main.cpp] as main
     [HelloImGui] as hello
     [ImguiBindings] as bindings
+    [ScriptArchive] as arch
 }
 
 package "Lua Views" {
     [router.lua] as router
     [common.lua] as common
+    [LoginView.lua] as login
     [MainMenu.lua] as menu
-    [StudentViews] as stu
-    [TeacherViews] as tch
-    [SubjectViews] as sub
-    [EnrollmentViews] as enr
+    [StudentList.lua] as stu_list
+    [StudentCreate.lua] as stu_create
+    [TeacherList.lua] as tch_list
+    [TeacherCreate.lua] as tch_create
+    [SubjectList.lua] as sub_list
+    [SubjectCreate.lua] as sub_create
+    [StudentDetail.lua] as stu_detail
+    [StudentProfile.lua] as stu_profile
+    [EnrollmentList.lua] as enr_list
+    [misc.globals.lua] as globals
 }
 
 package "project_utility" {
@@ -28,6 +36,10 @@ package "project_utility" {
 package "project_model" {
     [Record.hpp] as model
     [BPlusTree.hpp] as btree
+    [Student.hpp] as stu_m
+    [Teacher.hpp] as tch_m
+    [Subject.hpp] as sub_m
+    [Enrollment.hpp] as enr_m
 }
 
 package "project_controller" {
@@ -41,23 +53,36 @@ database "records.idx\n(Hash Index)" as idxfile
 
 main --> hello
 main --> bindings
+main --> arch
 main --> dm
-hello --> router
-bindings --> router
-dm --> bindings
+hello --> router : RenderUI()
+bindings --> router : imgui.* API
+dm --> bindings : Lua methods
 
+router --> login
 router --> menu
-router --> stu
-router --> tch
-router --> sub
-router --> enr
+router --> stu_list
+router --> stu_create
+router --> tch_list
+router --> tch_create
+router --> sub_list
+router --> sub_create
+router --> stu_detail
+router --> stu_profile
+router --> enr_list
 router --> common
 
+stu_list --> dm
+stu_create --> dm
+tch_list --> dm
+tch_create --> dm
+sub_list --> dm
+sub_create --> dm
+stu_detail --> dm
+stu_profile --> dm
+enr_list --> dm
 menu --> dm
-stu --> dm
-tch --> dm
-sub --> dm
-enr --> dm
+login --> dm
 
 dm --> fm
 dm --> idx
@@ -66,6 +91,10 @@ dm --> btree
 fm --> model
 model --> const
 model --> enums
+stu_m --> model
+tch_m --> model
+sub_m --> model
+enr_m --> model
 idx --> const
 btree --> model
 

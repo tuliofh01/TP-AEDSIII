@@ -9,10 +9,11 @@ title Estrutura Binaria - records.dat
 package "registros.dat (arquivo unico)" {
     [File Header\n(256 bytes)\nmagic + chunk table] as header
 
-    package "Alunos (chunk 'S')\n139 bytes/registro\n100 registros" {
+        package "Alunos (chunk 'S')\n141 bytes/registro\n100+ registros" {
         [status\n1B] as s_st
         [type\n1B] as s_ty
         [userId\n4B] as s_uid
+        [password\n2B] as s_pw
         [name\n50B] as s_nm
         [email\n30B] as s_em
         [cpf\n15B] as s_cpf
@@ -21,10 +22,11 @@ package "registros.dat (arquivo unico)" {
         [enrollmentYear\n4B] as s_ey
     }
 
-    package "Professores (chunk 'T')\n165 bytes/registro\n100 registros" {
+    package "Professores (chunk 'T')\n167 bytes/registro\n100+ registros" {
         [status\n1B] as t_st
         [type\n1B] as t_ty
         [userId\n4B] as t_uid
+        [password\n2B] as t_pw
         [name\n50B] as t_nm
         [email\n30B] as t_em
         [cpf\n15B] as t_cpf
@@ -33,7 +35,7 @@ package "registros.dat (arquivo unico)" {
         [hireDate\n4B] as t_hd
     }
 
-    package "Disciplinas (chunk 'B')\n84 bytes/registro\n100 registros" {
+    package "Disciplinas (chunk 'B')\n84 bytes/registro\n100+ registros" {
         [status\n1B] as b_st
         [type\n1B] as b_ty
         [subjectId\n4B] as b_sid
@@ -43,12 +45,12 @@ package "registros.dat (arquivo unico)" {
         [teacherId\n4B] as b_tid
     }
 
-    package "Arvore B+ (chunk 'I')\n4 paginas de 4096B" {
-        [Cabecalho\n24B] as th
-        [Pagina 0\n4096B] as tp0
-        [Pagina 1\n4096B] as tp1
-        [Pagina 2\n4096B] as tp2
-        [Pagina 3\n4096B] as tp3
+    package "Arvore B+ (chunk 'I')\n4+ paginas de 4096B" {
+        [Cabecalho\nCHUNK_HEADER] as th
+        [Pagina 0 (folha)\n4096B] as tp0
+        [Pagina 1 (folha)\n4096B] as tp1
+        [Pagina 2 (interna)\n4096B] as tp2
+        [Pagina 3+\n4096B] as tp3
     }
 }
 
