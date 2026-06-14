@@ -96,37 +96,19 @@ A B+ Tree usa páginas de 4096 bytes (~89 entries/leaf, ~145 keys/internal).
 
 ### 4.1 Visão Geral
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│                         TPAEDSIII                                  │
-├────────────────────────────────────────────────────────────────────┤
-│  C++ Backend              │  Lua Views (DSL)      │  ImGui        │
-│  ┌────────────────────┐   │  ┌─────────────────┐   │  ┌────┐      │
-│  │ project_utility    │   │  │ handlers/       │───│─›│ UI │      │
-│  │ (Constants, Enums) │   │  │  router.lua     │   │  └────┘      │
-│  ├────────────────────┤   │  │  common.lua     │   │              │
-│  │ project_model      │   │  │  LoginView.lua  │   │              │
-│  │ (Record, Student,  │   │  ├─────────────────┤   │              │
-│  │  Teacher, Subject, │   │  │ GUI/functional/ │   │              │
-│  │  Enrollment,       │   │  │  MainMenu       │   │              │
-│  │  BPlusTree)        │   │  │  StudentList    │   │              │
-│  ├────────────────────┤   │  │  TeacherCreate  │   │              │
-│  │ project_controller │   │  │  TeacherList    │   │              │
-│  │ (DataManager,      │   │  │  SubjectCreate  │   │              │
-│  │  FileManager,      │   │  │  SubjectList    │   │              │
-│  │  IndexCtrl)        │   │  ├─────────────────┤   │              │
-│  ├────────────────────┤   │  │ GUI/displayer/  │   │              │
-│  │ project_view       │   │  │  StudentCreate  │   │              │
-│  │ (ImguiBindings,    │   │  │  StudentDetail  │   │              │
-│  │  ScriptArchive)    │   │  │  StudentProfile │   │              │
-│  └────────────────────┘   │  │  EnrollmentList │   │              │
-│                           │  ├─────────────────┤   │  4-Cores:    │
-│                           │  │ misc/           │   │  Preto,      │
-│                           │  │  populate.lua   │   │  Branco,     │
-│                           │  │  globals.lua    │   │  Verde,      │
-│                           │  └─────────────────┘   │  Vermelho    │
-└────────────────────────────────────────────────────────────────────┘
-```
+A arquitetura segue MVC com **C++** no backend (model + controller) e **Lua scripts** como DSL de views renderizadas via Dear ImGui. Diagramas completos em `docs/UML Diagrams/`:
+
+| Diagrama | Descrição | Arquivo |
+|----------|-----------|---------|
+| Arquitetura do Sistema | Visão geral dos componentes e fluxo de dados | [`docs/UML Diagrams/arquitetura_sistema.png`](docs/UML%20Diagrams/arquitetura_sistema.png) |
+| Diagrama de Classes | Estrutura de classes C++ e relacionamentos | [`docs/UML Diagrams/diagrama_classes.png`](docs/UML%20Diagrams/diagrama_classes.png) |
+| Estrutura Binária | Layout do arquivo `records.dat` (chunks + header) | [`docs/UML Diagrams/estrutura_binaria.png`](docs/UML%20Diagrams/estrutura_binaria.png) |
+| Diagrama de Sequência | Fluxo CRUD (Create, Read, Update, Delete) | [`docs/UML Diagrams/diagrama_sequencia_crud.png`](docs/UML%20Diagrams/diagrama_sequencia_crud.png) |
+| Diagrama de Relacionamento | Entidades e seus relacionamentos | [`docs/UML Diagrams/diagrama_relacionamento.png`](docs/UML%20Diagrams/diagrama_relacionamento.png) |
+| Diagrama de Casos de Uso | Atores e funcionalidades do sistema | [`docs/UML Diagrams/diagrama_casos_uso.png`](docs/UML%20Diagrams/diagrama_casos_uso.png) |
+| Fluxograma | Fluxo de execução do sistema | [`docs/UML Diagrams/fluxograma.png`](docs/UML%20Diagrams/fluxograma.png) |
+
+Fontes editáveis (`.puml` para PlantUML, `.mmd` para Mermaid) em `docs/UML Diagrams/src/`.
 
 ### 4.2 Stack Tecnológico
 
@@ -262,6 +244,21 @@ Sistema de login com dois papéis:
 - Resultado do login (`LoginResult`) exposto como tabela Lua: `{userId, role, name}`
 - View Router (`router.lua`) redireciona baseado em `user.role`
 
+### 6.1 Credenciais de Amostra
+
+Dados populados automaticamente na primeira execução (quando o banco está vazio):
+
+| Papel | CPF | Senha |
+|-------|-----|-------|
+| Professor | `00000000000` | `1234` |
+| Aluno | `11111111111` | `1234` |
+| Aluno | `22222222222` | `1234` |
+| Aluno | `33333333333` | `1234` |
+| Aluno | `44444444444` | `1234` |
+| Aluno | `55555555555` | `1234` |
+
+Delete `data/records.dat` para resetar e repovoar.
+
 ---
 
 ## 7. Interface Gráfica
@@ -272,11 +269,11 @@ Sistema de login com dois papéis:
 src/view/scripts/
 ├── handlers/
 │   ├── router.lua            # Navegação + autenticação
-│   ├── common.lua            # Sidebar + helpers + tema 4 cores
-│   └── LoginView.lua         # Tela de login
+│   └── common.lua            # Sidebar + helpers + tema 4 cores
 ├── GUI/
-│   ├── functional_views/     # Views CRUD (professor)
+│   ├── functional_views/     # Views CRUD (professor) + login
 │   │   ├── MainMenu.lua      # Menu principal com estatísticas
+│   │   ├── LoginView.lua     # Tela de login
 │   │   ├── StudentList.lua   # Listar alunos
 │   │   ├── TeacherCreate.lua # Cadastro de professor
 │   │   ├── TeacherList.lua   # Listar professores
@@ -377,6 +374,11 @@ brew update
 brew install cmake glfw ccache
 ```
 
+#### Windows (MSYS2/MinGW)
+```powershell
+pacman -S mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc mingw-w64-x86_64-glfw mingw-w64-x86_64-ccache
+```
+
 ### 10.2 Compilação
 
 ```bash
@@ -394,6 +396,15 @@ cmake --build builds
 ```
 
 **Nota**: As dependências (hello_imgui, lua, luaaa) estão pré-clonadas em `libs/`. O build usa FetchContent com `SOURCE_DIR` apontando para os diretórios locais — sem download de internet. GLFW é dependência de sistema para OpenGL.
+
+O CMake detecta automaticamente o gerador da sua plataforma (Unix Makefiles, Ninja, Visual Studio, Xcode). Para usar um gerador específico:
+
+```bash
+cmake -G Ninja -S . -B builds   # Mais rápido em todos os sistemas
+cmake -G "Unix Makefiles" -S . -B builds
+cmake -G "Visual Studio 17 2022" -S . -B builds  # Windows
+cmake -G Xcode -S . -B builds   # macOS
+```
 
 ### 10.3 Solução de Problemas
 
@@ -477,7 +488,7 @@ TP/
 │   └── test_main.cpp                   # 11 testes unitários
 ├── docs/
 │   ├── Markdown/                       # Documentação em markdown
-│   ├── Text/                           # Documentação em texto puro
+│   ├── Markdown/documentação_cmake.md  # Documentação detalhada do CMake
 │   ├── UML Diagrams/                   # Diagramas PlantUML + PNG
 │   ├── PDFs/                           # Documentos em PDF
 │   └── ux/                             # Specs e mockups

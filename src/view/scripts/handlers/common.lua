@@ -36,7 +36,8 @@ function M.button(label, bgColor, w, h)
 	if bgColor then
 		M.setColor(M.COL.Button, bgColor)
 		M.setColor(M.COL.ButtonHov, bgColor)
-		pushed = 2
+		M.setColor(M.COL.Text, M.COLORS.White)
+		pushed = 3
 	end
 	local clicked = imgui.Button(label, w or 0, h or 0)
 	if pushed > 0 then M.popColors(pushed) end
@@ -49,9 +50,11 @@ function M.textColored(text, color)
 	if color then M.popColors() end
 end
 
+local SIDEBAR_W = 180
+
 function M.sidebar(currentView, user)
 	imgui.SetNextWindowPos(0, 0, "Always")
-	imgui.SetNextWindowSize(150, 600, "Always")
+	imgui.SetNextWindowSize(SIDEBAR_W, 600, "Always")
 
 	if imgui.Begin("Nav", nil, {"NoResize", "NoTitleBar"}) then
 		M.setColor(M.COL.WindowBg, M.COLORS.Black)
@@ -59,7 +62,9 @@ function M.sidebar(currentView, user)
 
 		imgui.Text("AEDS III")
 		imgui.Separator()
-		M.textColored("Bem-vindo, " .. (user and user.name or "?"), M.COLORS.Green)
+		M.setColor(M.COL.Text, M.COLORS.Green)
+		imgui.TextWrapped("Bem-vindo, " .. (user and user.name or "?"))
+		M.popColors()
 		imgui.Separator()
 		imgui.Spacing()
 
@@ -71,18 +76,18 @@ function M.sidebar(currentView, user)
 				{ id = "myenr",   label = "Minhas Matriculas" },
 			}
 		else
-			-- Teacher sidebar
+			-- Teacher sidebar (labels must be unique for ImGui IDs and descriptive)
 			sections = {
 				{ label = "-- Estudantes --" },
-				{ id = "create",  label = "Cadastrar" },
-				{ id = "list",    label = "Listar" },
-				{ id = "search",  label = "Consultar" },
+				{ id = "create",  label = "Cadastrar Aluno" },
+				{ id = "list",    label = "Listar Alunos" },
+				{ id = "search",  label = "Consultar Aluno" },
 				{ label = "-- Professores --" },
-				{ id = "tcreate", label = "Cadastrar" },
-				{ id = "tlist",   label = "Listar" },
+				{ id = "tcreate", label = "Cadastrar Prof" },
+				{ id = "tlist",   label = "Listar Profs" },
 				{ label = "-- Disciplinas --" },
-				{ id = "screate", label = "Cadastrar" },
-				{ id = "slist",   label = "Listar" },
+				{ id = "screate", label = "Cadastrar Disc" },
+				{ id = "slist",   label = "Listar Discs" },
 				{ label = "-- Matriculas --" },
 				{ id = "elist",   label = "Gerenciar" },
 			}
@@ -95,9 +100,11 @@ function M.sidebar(currentView, user)
 			else
 				local isActive = (currentView == v.id)
 				local bg = isActive and M.COLORS.Green or M.COLORS.Black
-				if M.button(v.label, bg, 130, 25) then
+				imgui.PushID(v.id)
+				if M.button(v.label, bg, SIDEBAR_W - 20, 25) then
 					currentView = v.id
 				end
+				imgui.PopID()
 				imgui.Spacing()
 			end
 		end
@@ -119,7 +126,7 @@ function M.sidebar(currentView, user)
 
 		imgui.Separator()
 		imgui.Spacing()
-		if M.button("Sair", M.COLORS.Red, 130, 25) then
+		if M.button("Sair", M.COLORS.Red, SIDEBAR_W - 20, 25) then
 			LoginView.logout()
 			currentView = "menu"
 		end

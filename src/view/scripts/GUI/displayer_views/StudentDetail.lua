@@ -18,12 +18,14 @@ function M.render()
 	imgui.Separator()
 	imgui.Spacing()
 
-	resultText = ""
-
 	imgui.Text("ID do Estudante:")
 	imgui.SetNextItemWidth(-1)
 	imgui.PushID("search_id")
-	searchBuf = imgui.InputText("##search", searchBuf)
+	local newBuf = imgui.InputText("##search", searchBuf)
+	if newBuf ~= searchBuf then
+		searchBuf = newBuf
+		resultText = ""
+	end
 	imgui.PopID()
 	imgui.Spacing()
 

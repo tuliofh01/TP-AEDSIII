@@ -19,8 +19,8 @@ local currentView = "menu"
 local errorMsg = ""
 
 local function renderContent(user)
-	imgui.SetNextWindowPos(160, 0, "Always")
-	imgui.SetNextWindowSize(640, 600, "Always")
+	imgui.SetNextWindowPos(190, 0, "Always")
+	imgui.SetNextWindowSize(610, 600, "Always")
 
 	if imgui.Begin("Conteudo", nil, {"NoResize"}) then
 		imgui.PushStyleColor(common.COL.WindowBg, common.COLORS.White)

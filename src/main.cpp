@@ -335,8 +335,8 @@ int main(int argc, char** argv) {
 	std::filesystem::create_directories(dataDir);
 	std::ignore = mgr.initialize(dataDir);
 
-	// Populate sample data for fresh databases
-	if (mgr.getActiveCount('T') == 0 && mgr.getActiveCount('S') == 0) {
+	// Populate sample data for fresh or incomplete databases
+	if (mgr.getActiveCount('T') == 0 || mgr.getActiveCount('B') == 0) {
 		lua_getglobal(L, "require");
 		lua_pushstring(L, "misc.populate_samples");
 		if (lua_pcall(L, 1, 1, 0) == LUA_OK) {

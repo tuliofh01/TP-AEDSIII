@@ -65,18 +65,10 @@ FetchContent_Declare(luaaa
 FetchContent_MakeAvailable(luaaa)
 
 # ======================
-# Backend OpenGL por plataforma
+# Backend OpenGL (todas as plataformas)
 # ======================
-if(WIN32)
-	find_package(OpenGL REQUIRED)
-	set(PLATFORM_LIBS OpenGL::GL)
-elseif(APPLE)
-	find_package(OpenGL REQUIRED)
-	set(PLATFORM_LIBS OpenGL::GL)
-elseif(UNIX)
-	find_package(OpenGL REQUIRED)
-	set(PLATFORM_LIBS OpenGL::GL)
-endif()
+find_package(OpenGL REQUIRED)
+set(PLATFORM_LIBS OpenGL::GL)
 
 # ======================
 # Funcoes CMake do hello_imgui

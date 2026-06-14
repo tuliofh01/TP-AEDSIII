@@ -1,4 +1,4 @@
--- StudentList.scripts
+-- StudentList.lua
 -- Lista todos estudantes ativos
 
 local M = {}
@@ -27,15 +27,12 @@ function M.render()
 	imgui.Separator()
 	imgui.Spacing()
 
-	-- Lista vertical simples
+	-- Lista vertical
 	for _, s in ipairs(students) do
 		imgui.PushID("student_" .. s.id)
 
-		-- Linha: ID + Nome
-		imgui.Text("[" .. tostring(s.id) .. "] " .. tostring(s.name))
-
-		-- Botao deletar alinhado a direita
 		local aw = imgui.GetContentRegionAvail()
+		imgui.TextWrapped("[" .. tostring(s.id) .. "] " .. tostring(s.name))
 		imgui.SameLine(aw - 40)
 		if common.button("X", common.COLORS.Red, 30, 20) then
 			dm:deleteStudent(s.id)

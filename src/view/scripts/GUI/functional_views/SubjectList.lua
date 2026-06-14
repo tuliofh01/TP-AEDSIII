@@ -28,10 +28,9 @@ function M.render()
 
 	for _, s in ipairs(subjects) do
 		imgui.PushID("subject_" .. s.id)
-		imgui.Text("[" .. tostring(s.id) .. "] " .. tostring(s.name) .. " (" .. tostring(s.code) .. ")")
-		imgui.Text("  Creditos: " .. tostring(s.credits) .. " | Professor ID: " .. tostring(s.teacherId))
-
 		local aw = imgui.GetContentRegionAvail()
+		imgui.TextWrapped("[" .. tostring(s.id) .. "] " .. tostring(s.name) .. " (" .. tostring(s.code) .. ")")
+		imgui.Text("  Creditos: " .. tostring(s.credits) .. " | Professor ID: " .. tostring(s.teacherId))
 		imgui.SameLine(aw - 40)
 		if common.button("X", common.COLORS.Red, 30, 20) then
 			dm:deleteSubject(s.id)
