@@ -2,7 +2,7 @@
 -- Lista todos estudantes ativos
 
 local M = {}
-local common = require("common")
+local common = require("handlers.common")
 
 function M.render()
 	local dm = getDataManager()
@@ -16,7 +16,7 @@ function M.render()
 	imgui.Spacing()
 
 	-- Busca lista
-	local students = dm:listAll()
+	local students = dm:listAllStudents()
 
 	if #students == 0 then
 		common.textColored("Nenhum estudante encontrado.", common.COLORS.Red)
@@ -35,7 +35,8 @@ function M.render()
 		imgui.Text("[" .. tostring(s.id) .. "] " .. tostring(s.name))
 
 		-- Botao deletar alinhado a direita
-		imgui.SameLine(500)
+		local aw = imgui.GetContentRegionAvail()
+		imgui.SameLine(aw - 40)
 		if common.button("X", common.COLORS.Red, 30, 20) then
 			dm:deleteStudent(s.id)
 		end

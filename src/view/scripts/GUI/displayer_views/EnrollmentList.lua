@@ -1,15 +1,21 @@
 -- EnrollmentList.lua
--- Gerenciamento de matriculas (B+ Tree enrollments)
+-- Gerenciamento de matriculas — professores: full; alunos: somente leitura
 
 local M = {}
-local common = require("common")
+local common = require("handlers.common")
 
-local mode = "enroll" -- "enroll", "byStudent", "bySubject", "list"
-local studentIdBuf = ""
-local subjectIdBuf = ""
-local teacherIdBuf = ""
-local semesterBuf = "2026-1"
+local mode = "enroll"
+
+-- Each UI section has its own independent buffers to prevent cross-talk
+local enrollStuBuf = ""
+local enrollSubBuf = ""
+local enrollTchBuf = ""
+local enrollSemBuf = "2026-1"
+local gradeStuBuf = ""
+local gradeSubBuf = ""
 local gradeBuf = ""
+local byStuBuf = ""
+local bySubBuf = ""
 local queryResult = ""
 local enrollments = {}
 local showGradePopup = false
@@ -24,20 +30,36 @@ local function showEnrollmentsTable(list, label)
 	imgui.Text(label .. " (" .. tostring(#list) .. ")")
 	imgui.Separator()
 	for _, e in ipairs(list) do
-		imgui.Text("Aluno " .. tostring(e.studentId) .. " | Disciplina " ..
-			tostring(e.subjectId) .. " | Prof " .. tostring(e.teacherId) ..
-			" | Nota: " .. string.format("%.1f", e.grade) .. " | " .. tostring(e.semester))
+		local status = ""
+		if e.grade > 0 then
+			status = (e.approved and "APROVADO") or "REPROVADO"
+		end
+		imgui.Text("Disc " .. tostring(e.subjectId) .. " | Prof " .. tostring(e.teacherId) ..
+			" | Nota: " .. tostring(e.grade) .. "/100 " .. status ..
+			" | " .. tostring(e.semester))
 		imgui.Separator()
 	end
 end
 
-function M.render()
+function M.render(studentId, readOnly)
 	local dm = getDataManager()
 	if not dm then
 		imgui.Text("DataManager nao inicializado")
 		return
 	end
 
+	if readOnly then
+		-- Student mode: auto-load own enrollments, read-only
+		imgui.Text("Minhas Matriculas")
+		imgui.Separator()
+		imgui.Spacing()
+
+		local list = dm:getEnrollmentsByStudent(studentId)
+		showEnrollmentsTable(list, "Matriculas do Aluno " .. tostring(studentId))
+		return
+	end
+
+	-- Teacher mode: full access
 	imgui.Text("Gerenciar Matriculas")
 	imgui.Separator()
 	imgui.Spacing()
@@ -64,32 +86,36 @@ function M.render()
 		imgui.Spacing()
 
 		imgui.Text("ID Aluno:")
+		imgui.SetNextItemWidth(-1)
 		imgui.PushID("enr_stu")
-		studentIdBuf = imgui.InputText("##stu", studentIdBuf)
+		enrollStuBuf = imgui.InputText("##stu", enrollStuBuf)
 		imgui.PopID()
 
 		imgui.Text("ID Disciplina:")
+		imgui.SetNextItemWidth(-1)
 		imgui.PushID("enr_sub")
-		subjectIdBuf = imgui.InputText("##sub", subjectIdBuf)
+		enrollSubBuf = imgui.InputText("##sub", enrollSubBuf)
 		imgui.PopID()
 
 		imgui.Text("ID Professor:")
+		imgui.SetNextItemWidth(-1)
 		imgui.PushID("enr_tch")
-		teacherIdBuf = imgui.InputText("##tch", teacherIdBuf)
+		enrollTchBuf = imgui.InputText("##tch", enrollTchBuf)
 		imgui.PopID()
 
 		imgui.Text("Semestre:")
+		imgui.SetNextItemWidth(-1)
 		imgui.PushID("enr_sem")
-		semesterBuf = imgui.InputText("##sem", semesterBuf)
+		enrollSemBuf = imgui.InputText("##sem", enrollSemBuf)
 		imgui.PopID()
 
 		imgui.Spacing()
 		if common.button("Matricular", common.COLORS.Green, 150, 30) then
-			local sid = tonumber(studentIdBuf)
-			local bid = tonumber(subjectIdBuf)
-			local tid = tonumber(teacherIdBuf)
+			local sid = tonumber(enrollStuBuf)
+			local bid = tonumber(enrollSubBuf)
+			local tid = tonumber(enrollTchBuf)
 			if sid and bid and tid then
-				local ok = dm:enrollStudent(sid, bid, tid, semesterBuf)
+				local ok = dm:enrollStudent(sid, bid, tid, enrollSemBuf)
 				if ok then
 					common.errorPopup("Matricula realizada com sucesso!")
 				else
@@ -109,27 +135,27 @@ function M.render()
 		imgui.Spacing()
 
 		imgui.Text("ID Aluno:")
+		imgui.SetNextItemWidth(-1)
 		imgui.PushID("gr_stu")
-		studentIdBuf2 = studentIdBuf
-		local sid2 = imgui.InputText("##stu2", studentIdBuf)
-		studentIdBuf = sid2
+		gradeStuBuf = imgui.InputText("##stu2", gradeStuBuf)
 		imgui.PopID()
 
 		imgui.Text("ID Disciplina:")
+		imgui.SetNextItemWidth(-1)
 		imgui.PushID("gr_sub")
-		local bid2 = imgui.InputText("##sub2", subjectIdBuf)
-		subjectIdBuf = bid2
+		gradeSubBuf = imgui.InputText("##sub2", gradeSubBuf)
 		imgui.PopID()
 
-		imgui.Text("Nota:")
+		imgui.Text("Nota (0-100):")
+		imgui.SetNextItemWidth(-1)
 		imgui.PushID("gr_grade")
 		gradeBuf = imgui.InputText("##grade", gradeBuf)
 		imgui.PopID()
 
 		imgui.Spacing()
 		if common.button("Atualizar Nota", common.COLORS.Black, 150, 30) then
-			local sid = tonumber(studentIdBuf)
-			local bid = tonumber(subjectIdBuf)
+			local sid = tonumber(gradeStuBuf)
+			local bid = tonumber(gradeSubBuf)
 			local g = tonumber(gradeBuf)
 			if sid and bid and g then
 				local ok = dm:updateGrade(sid, bid, g)
@@ -148,10 +174,11 @@ function M.render()
 		imgui.Spacing()
 
 		imgui.Text("ID Aluno:")
-		local sidInput = imgui.InputText("##stuSearch", studentIdBuf)
-		if sidInput ~= studentIdBuf then
-			studentIdBuf = sidInput
-			local sid = tonumber(studentIdBuf)
+		imgui.SetNextItemWidth(-1)
+		local sidInput = imgui.InputText("##stuSearch", byStuBuf)
+		if sidInput ~= byStuBuf then
+			byStuBuf = sidInput
+			local sid = tonumber(byStuBuf)
 			if sid then
 				enrollments = dm:getEnrollmentsByStudent(sid)
 			end
@@ -161,17 +188,18 @@ function M.render()
 		imgui.Separator()
 		imgui.Spacing()
 
-		showEnrollmentsTable(enrollments, "Matriculas do Aluno " .. studentIdBuf)
+		showEnrollmentsTable(enrollments, "Matriculas do Aluno " .. byStuBuf)
 
 	elseif mode == "bySubject" then
 		imgui.Text("Matriculas por Disciplina")
 		imgui.Spacing()
 
 		imgui.Text("ID Disciplina:")
-		local bidInput = imgui.InputText("##subSearch", subjectIdBuf)
-		if bidInput ~= subjectIdBuf then
-			subjectIdBuf = bidInput
-			local bid = tonumber(subjectIdBuf)
+		imgui.SetNextItemWidth(-1)
+		local bidInput = imgui.InputText("##subSearch", bySubBuf)
+		if bidInput ~= bySubBuf then
+			bySubBuf = bidInput
+			local bid = tonumber(bySubBuf)
 			if bid then
 				enrollments = dm:getEnrollmentsBySubject(bid)
 			end
@@ -181,7 +209,7 @@ function M.render()
 		imgui.Separator()
 		imgui.Spacing()
 
-		showEnrollmentsTable(enrollments, "Matriculas da Disciplina " .. subjectIdBuf)
+		showEnrollmentsTable(enrollments, "Matriculas da Disciplina " .. bySubBuf)
 	end
 
 	common.errorPopup("")

@@ -2,7 +2,7 @@
 -- Menu principal do sistema
 
 local M = {}
-local common = require("common")
+local common = require("handlers.common")
 
 function M.render()
 	local dm = getDataManager()
@@ -11,10 +11,10 @@ function M.render()
 	imgui.Separator()
 	imgui.Spacing()
 
-	common.textColored("Bem-vindo ao sistema de gestao academica.", common.COLORS.Black)
+	imgui.TextWrapped("Bem-vindo ao sistema de gestao academica.")
 	imgui.Spacing()
 
-	imgui.Text("Selecione uma opcao na barra lateral para comecar.")
+	imgui.TextWrapped("Selecione uma opcao na barra lateral para comecar.")
 	imgui.Spacing()
 	imgui.Spacing()
 
@@ -41,18 +41,22 @@ function M.render()
 	imgui.Spacing()
 
 	if common.button("Cadastrar Estudante", common.COLORS.Green, 200, 30) then
+		common.goTo("create")
 	end
 	imgui.Spacing()
 
 	if common.button("Cadastrar Professor", common.COLORS.Green, 200, 30) then
+		common.goTo("tcreate")
 	end
 	imgui.Spacing()
 
 	if common.button("Cadastrar Disciplina", common.COLORS.Green, 200, 30) then
+		common.goTo("screate")
 	end
 	imgui.Spacing()
 
 	if common.button("Matricular Aluno", common.COLORS.Black, 200, 30) then
+		common.goTo("elist")
 	end
 	imgui.Spacing()
 end

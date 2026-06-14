@@ -2,7 +2,7 @@
 -- Consulta estudante por ID
 
 local M = {}
-local common = require("common")
+local common = require("handlers.common")
 
 local searchBuf = ""
 local resultText = ""
@@ -18,8 +18,13 @@ function M.render()
 	imgui.Separator()
 	imgui.Spacing()
 
+	resultText = ""
+
 	imgui.Text("ID do Estudante:")
+	imgui.SetNextItemWidth(-1)
+	imgui.PushID("search_id")
 	searchBuf = imgui.InputText("##search", searchBuf)
+	imgui.PopID()
 	imgui.Spacing()
 
 	if common.button("Buscar", common.COLORS.Green, 150, 35) then

@@ -2,7 +2,7 @@
 -- Lista todos professores ativos
 
 local M = {}
-local common = require("common")
+local common = require("handlers.common")
 
 function M.render()
 	local dm = getDataManager()
@@ -31,7 +31,8 @@ function M.render()
 		imgui.Text("[" .. tostring(t.id) .. "] " .. tostring(t.name))
 		imgui.Text("  Depto: " .. tostring(t.department) .. " | " .. tostring(t.specialization))
 
-		imgui.SameLine(500)
+		local aw = imgui.GetContentRegionAvail()
+		imgui.SameLine(aw - 40)
 		if common.button("X", common.COLORS.Red, 30, 20) then
 			dm:deleteTeacher(t.id)
 		end

@@ -1,3 +1,7 @@
+// Manages low-level binary file I/O with fixed-size records.
+// Provides sequential and random-access read/write, logical deletion,
+// and active-record counting. All offsets are computed from record index.
+
 #pragma once
 
 #include <cstdint>
@@ -21,25 +25,32 @@ namespace project_controller {
 		FileManager(FileManager&&) noexcept = default;
 		FileManager& operator=(FileManager&&) noexcept = default;
 
+		// Lifecycle
 		[[nodiscard]] bool initialize(const std::string& path);
 		[[nodiscard]] bool isOpen() const;
 
+		// Record size configuration
 		void setRecordSize(size_t recordSize) { recordSize_ = recordSize; }
 		[[nodiscard]] size_t getRecordSize() const { return recordSize_; }
 
+		// CRUD — by record index
 		[[nodiscard]] std::optional<std::vector<std::byte>> readRecord(size_t index) const;
 		[[nodiscard]] bool writeRecord(const std::vector<std::byte>& data, size_t index);
 		[[nodiscard]] bool appendRecord(const std::vector<std::byte>& data);
 
+		// Counting
 		[[nodiscard]] uint32_t countActive() const;
 		[[nodiscard]] uint32_t countTotal() const;
 
+		// Logical deletion
 		[[nodiscard]] bool markDeleted(size_t index) const;
 		[[nodiscard]] bool isDeleted(size_t index) const;
 
+		// Flush / close
 		void flush() const;
 		void close();
 
+		// Raw byte-level access (by byte offset)
 		[[nodiscard]] bool readAt(std::vector<std::byte>& buf, size_t off) const;
 		[[nodiscard]] bool writeAt(const std::vector<std::byte>& data, size_t off) const;
 
@@ -47,7 +58,7 @@ namespace project_controller {
 		mutable std::fstream fileStream_;
 		std::string filePath_;
 		size_t recordCount_ = 0;
-		size_t recordSize_ = project_utility::RECORD_TOTAL_SIZE;
+		size_t recordSize_ = 0;
 
 		[[nodiscard]] size_t calcOffset(size_t index) const;
 		void updateCount();

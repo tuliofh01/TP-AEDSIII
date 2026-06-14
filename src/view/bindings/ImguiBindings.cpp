@@ -106,8 +106,8 @@ static int lua_InputText(lua_State* L) {
     } else {
         buffer[0] = '\0';
     }
-    bool result = ImGui::InputText(label, buffer, sizeof(buffer));
-    lua_pushboolean(L, result);
+    ImGui::InputText(label, buffer, sizeof(buffer));
+    lua_pushstring(L, buffer);
     return 1;
 }
 
@@ -132,6 +132,50 @@ static int lua_Spacing(lua_State* L) {
     (void)L;
     ImGui::Spacing();
     return 0;
+}
+
+static int lua_Dummy(lua_State* L) {
+    float w = (float)luaL_checknumber(L, 1);
+    float h = (float)luaL_checknumber(L, 2);
+    ImGui::Dummy(ImVec2(w, h));
+    return 0;
+}
+
+static int lua_SetWindowFontScale(lua_State* L) {
+    float scale = (float)luaL_checknumber(L, 1);
+    ImGui::SetWindowFontScale(scale);
+    return 0;
+}
+
+static int lua_TextWrapped(lua_State* L) {
+    const char* text = luaL_checkstring(L, 1);
+    ImGui::TextWrapped("%s", text);
+    return 0;
+}
+
+static int lua_SetNextItemWidth(lua_State* L) {
+    float w = (float)luaL_checknumber(L, 1);
+    ImGui::SetNextItemWidth(w);
+    return 0;
+}
+
+static int lua_GetContentRegionAvail(lua_State* L) {
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    lua_pushnumber(L, avail.x);
+    lua_pushnumber(L, avail.y);
+    return 2;
+}
+
+static int lua_SetCursorPosX(lua_State* L) {
+    float x = (float)luaL_checknumber(L, 1);
+    ImGui::SetCursorPosX(x);
+    return 0;
+}
+
+static int lua_GetWindowWidth(lua_State* L) {
+    (void)L;
+    lua_pushnumber(L, ImGui::GetWindowWidth());
+    return 1;
 }
 
 // ========================================
@@ -227,12 +271,19 @@ static const luaL_Reg imgui_funcs[] = {
     {"Begin", lua_Begin},
     {"End", lua_End},
     {"Text", lua_Text},
+    {"TextWrapped", lua_TextWrapped},
     {"Separator", lua_Separator},
     {"Button", lua_Button},
     {"InputText", lua_InputText},
     {"InputInt", lua_InputInt},
     {"SameLine", lua_SameLine},
     {"Spacing", lua_Spacing},
+    {"Dummy", lua_Dummy},
+    {"SetWindowFontScale", lua_SetWindowFontScale},
+    {"SetNextItemWidth", lua_SetNextItemWidth},
+    {"GetContentRegionAvail", lua_GetContentRegionAvail},
+    {"SetCursorPosX", lua_SetCursorPosX},
+    {"GetWindowWidth", lua_GetWindowWidth},
     {"PushStyleColor", lua_PushStyleColor},
     {"PopStyleColor", lua_PopStyleColor},
     {"OpenPopup", lua_OpenPopup},

@@ -6,6 +6,27 @@
 
 namespace project_controller {
 
+	// Index key prefixes used throughout CRUD + enrollment operations.
+	// Centralized here so key format changes are a single edit.
+	constexpr auto IDX_STU = "STU:";
+	constexpr auto IDX_TCH = "TCH:";
+	constexpr auto IDX_SUB = "SUB:";
+	constexpr auto IDX_NM = "NM:";
+	constexpr auto IDX_CPF = "CPF:";
+	constexpr auto IDX_CPF_STU = ":STU";
+	constexpr auto IDX_CPF_TCH = ":TCH";
+	constexpr auto IDX_ENR = "ENR:";
+	constexpr auto IDX_ENR_STU = "ENR:STU:";
+	constexpr auto IDX_ENR_SUB = "ENR:SUB:";
+	constexpr auto IDX_ENR_INFIX = ":SUB:";
+
+	// Helper: write a std::string into a fixed-width char array with null termination.
+	// Replaces the 3-line std::strncpy + manual null guard pattern used throughout.
+	static void writeFixedField(char* dest, const std::string& src, size_t fieldLen) {
+		std::strncpy(dest, src.c_str(), fieldLen - 1);
+		dest[fieldLen - 1] = '\0';
+	}
+
 	// ========================================
 	// Destructor — ensure file is flushed
 	// ========================================
@@ -24,8 +45,8 @@ namespace project_controller {
 		using namespace project_model;
 
 		dataDir_ = dataDir;
-		auto dataPath = dataDir + "/" + std::string(DATA_FILE);
-		auto idxPath = dataDir + "/" + std::string(INDEX_FILE);
+		auto dataPath = dataDir + "/" + std::string(BASE_NAME) + std::string(DATA_EXT);
+		auto idxPath = dataDir + "/" + std::string(BASE_NAME) + std::string(INDEX_EXT);
 
 		// Ensure data directory exists
 		std::filesystem::create_directories(dataDir);
@@ -34,10 +55,10 @@ namespace project_controller {
 
 		// Open the data file
 		dataFile_.open(dataPath,
-			std::ios::binary | std::ios::in | std::ios::out | std::ios::app);
+			std::ios::binary | std::ios::in | std::ios::out);
 		if (!dataFile_.is_open()) {
 			dataFile_.open(dataPath,
-				std::ios::binary | std::ios::out | std::ios::trunc);
+				std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
 			if (!dataFile_.is_open()) {
 				lastError_ = "Falha ao criar records.dat";
 				return false;
@@ -49,19 +70,19 @@ namespace project_controller {
 			// Initialize chunks with defaults
 			chunks_[CHUNK_STU] = ChunkInfo{};
 			chunks_[CHUNK_STU].type = CHUNK_STUDENT;
-			chunks_[CHUNK_STU].recordSize = STUDENT_RECORD_SIZE;
+			chunks_[CHUNK_STU].recordSize = sizeof(StudentRecord);
 			chunks_[CHUNK_STU].capacity = INITIAL_CHUNK_CAPACITY;
 			chunks_[CHUNK_STU].used = 0;
 
 			chunks_[CHUNK_TCH] = ChunkInfo{};
 			chunks_[CHUNK_TCH].type = CHUNK_TEACHER;
-			chunks_[CHUNK_TCH].recordSize = TEACHER_RECORD_SIZE;
+			chunks_[CHUNK_TCH].recordSize = sizeof(TeacherRecord);
 			chunks_[CHUNK_TCH].capacity = INITIAL_CHUNK_CAPACITY;
 			chunks_[CHUNK_TCH].used = 0;
 
 			chunks_[CHUNK_SUB] = ChunkInfo{};
 			chunks_[CHUNK_SUB].type = CHUNK_SUBJECT;
-			chunks_[CHUNK_SUB].recordSize = SUBJECT_RECORD_SIZE;
+			chunks_[CHUNK_SUB].recordSize = sizeof(SubjectRecord);
 			chunks_[CHUNK_SUB].capacity = INITIAL_CHUNK_CAPACITY;
 			chunks_[CHUNK_SUB].used = 0;
 
@@ -250,7 +271,7 @@ namespace project_controller {
 		writeHeader();
 
 		// Calculate total new file size
-		size_t newFileSize = chunks_[CHUNK_TREE].offset +
+		auto newFileSize = chunks_[CHUNK_TREE].offset +
 			static_cast<size_t>(chunks_[CHUNK_TREE].capacity) * BTREE_PAGE_SIZE;
 
 		// Set file to new size (extends file)
@@ -276,7 +297,7 @@ namespace project_controller {
 		};
 		std::vector<ChunkData> chunks;
 
-		size_t oldOff = FILE_HEADER_SIZE;
+		auto oldOff = FILE_HEADER_SIZE;
 		for (int i = 0; i < 4; ++i) {
 			size_t chunkBytes = static_cast<size_t>(oldCaps[i]) * chunks_[i].recordSize;
 			if (chunkBytes > 0) {
@@ -318,7 +339,7 @@ namespace project_controller {
 	// ========================================
 	auto DataManager::createStudent(
 		const std::string& name, const std::string& email,
-		const std::string& cpf, uint32_t birthDate,
+		const std::string& cpf, uint16_t password, uint32_t birthDate,
 		const std::string& courseName, int32_t enrollmentYear) -> bool
 	{
 		using namespace project_model;
@@ -330,38 +351,34 @@ namespace project_controller {
 
 		StudentRecord rec;
 		rec.type = project_utility::CHUNK_STUDENT;
-		std::strncpy(rec.name, name.c_str(), project_utility::NAME_LEN - 1);
-		rec.name[project_utility::NAME_LEN - 1] = '\0';
-		std::strncpy(rec.email, email.c_str(), project_utility::EMAIL_LEN - 1);
-		rec.email[project_utility::EMAIL_LEN - 1] = '\0';
-		std::strncpy(rec.cpf, cpf.c_str(), project_utility::CPF_LEN - 1);
-		rec.cpf[project_utility::CPF_LEN - 1] = '\0';
+		rec.password = password;
+		writeFixedField(rec.name, name, project_utility::NAME_LEN);
+		writeFixedField(rec.email, email, project_utility::EMAIL_LEN);
+		writeFixedField(rec.cpf, cpf, project_utility::CPF_LEN);
 		rec.birthDate = birthDate;
-		std::strncpy(rec.courseName, courseName.c_str(), project_utility::COURSE_LEN - 1);
-		rec.courseName[project_utility::COURSE_LEN - 1] = '\0';
+		writeFixedField(rec.courseName, courseName, project_utility::COURSE_LEN);
 		rec.enrollmentYear = enrollmentYear;
 
-		// Assign ID from header
-		auto id = indexCtrl_.nextId("STU:");
+		auto id = indexCtrl_.nextId(IDX_STU);
 		rec.userId = static_cast<int32_t>(id);
 
-		auto bytes = rec.toBytes();
+		auto bytes = serializeRecord(rec);
 		size_t idx = appendToChunk(CHUNK_STU, bytes);
 		if (idx == static_cast<size_t>(-1)) {
 			lastError_ = "Erro ao escrever estudante";
 			return false;
 		}
 
-		// Update index
-		indexCtrl_.insert("STU:" + std::to_string(rec.userId), CHUNK_STU, static_cast<uint32_t>(idx));
-		indexCtrl_.insert("NM:" + name, CHUNK_STU, static_cast<uint32_t>(idx));
-		indexCtrl_.save();
+		indexCtrl_.insert(std::string(IDX_STU) + std::to_string(rec.userId), CHUNK_STU, static_cast<uint32_t>(idx));
+		indexCtrl_.insert(std::string(IDX_NM) + name, CHUNK_STU, static_cast<uint32_t>(idx));
+		indexCtrl_.insert(std::string(IDX_CPF) + cpf + IDX_CPF_STU, CHUNK_STU, static_cast<uint32_t>(idx));
+		std::ignore = indexCtrl_.save();
 
 		return true;
 	}
 
-	auto DataManager::readStudent(int32_t id) const -> std::optional<project_model::StudentRecord> {
-		auto idxOpt = indexCtrl_.lookup("STU:" + std::to_string(id));
+	auto DataManager::readStudent(int32_t id) const -> std::optional<project_model::Student> {
+		auto idxOpt = indexCtrl_.lookup(std::string(IDX_STU) + std::to_string(id));
 		if (!idxOpt) {
 			lastError_ = "Estudante nao encontrado: " + std::to_string(id);
 			return std::nullopt;
@@ -369,7 +386,7 @@ namespace project_controller {
 
 		int ci = CHUNK_STU;
 		auto bytes = readFromChunk(ci, idxOpt->recordIndex);
-		auto rec = project_model::StudentRecord::fromBytes(bytes);
+		auto rec = project_model::Student::fromBytes(bytes);
 		if (!rec.isActive()) {
 			lastError_ = "Registro deletado";
 			return std::nullopt;
@@ -378,15 +395,15 @@ namespace project_controller {
 	}
 
 	auto DataManager::deleteStudent(int32_t id) -> bool {
-		auto idxOpt = indexCtrl_.lookup("STU:" + std::to_string(id));
+		auto idxOpt = indexCtrl_.lookup(std::string(IDX_STU) + std::to_string(id));
 		if (!idxOpt) {
 			lastError_ = "Estudante nao encontrado: " + std::to_string(id);
 			return false;
 		}
 
 		if (markDeletedInChunk(CHUNK_STU, idxOpt->recordIndex)) {
-			indexCtrl_.remove("STU:" + std::to_string(id));
-			(void)indexCtrl_.save();
+			indexCtrl_.remove(std::string(IDX_STU) + std::to_string(id));
+			std::ignore = indexCtrl_.save();
 			return true;
 		}
 
@@ -394,8 +411,8 @@ namespace project_controller {
 		return false;
 	}
 
-	auto DataManager::listAllStudents() const -> std::vector<project_model::StudentRecord> {
-		return scanAll<project_model::StudentRecord>(project_utility::CHUNK_STUDENT);
+	auto DataManager::listAllStudents() const -> std::vector<project_model::Student> {
+		return scanAll<project_model::Student>(project_utility::CHUNK_STUDENT);
 	}
 
 	// ========================================
@@ -403,7 +420,8 @@ namespace project_controller {
 	// ========================================
 	auto DataManager::createTeacher(
 		const std::string& name, const std::string& email,
-		const std::string& cpf, const std::string& department,
+		const std::string& cpf, uint16_t password,
+		const std::string& department,
 		const std::string& specialization, uint32_t hireDate) -> bool
 	{
 		using namespace project_model;
@@ -415,44 +433,41 @@ namespace project_controller {
 
 		TeacherRecord rec;
 		rec.type = project_utility::CHUNK_TEACHER;
-		std::strncpy(rec.name, name.c_str(), project_utility::NAME_LEN - 1);
-		rec.name[project_utility::NAME_LEN - 1] = '\0';
-		std::strncpy(rec.email, email.c_str(), project_utility::EMAIL_LEN - 1);
-		rec.email[project_utility::EMAIL_LEN - 1] = '\0';
-		std::strncpy(rec.cpf, cpf.c_str(), project_utility::CPF_LEN - 1);
-		rec.cpf[project_utility::CPF_LEN - 1] = '\0';
-		std::strncpy(rec.department, department.c_str(), project_utility::DEPT_LEN - 1);
-		rec.department[project_utility::DEPT_LEN - 1] = '\0';
-		std::strncpy(rec.specialization, specialization.c_str(), project_utility::SPEC_LEN - 1);
-		rec.specialization[project_utility::SPEC_LEN - 1] = '\0';
+		rec.password = password;
+		writeFixedField(rec.name, name, project_utility::NAME_LEN);
+		writeFixedField(rec.email, email, project_utility::EMAIL_LEN);
+		writeFixedField(rec.cpf, cpf, project_utility::CPF_LEN);
+		writeFixedField(rec.department, department, project_utility::DEPT_LEN);
+		writeFixedField(rec.specialization, specialization, project_utility::SPEC_LEN);
 		rec.hireDate = hireDate;
 
-		auto id = indexCtrl_.nextId("TCH:");
+		auto id = indexCtrl_.nextId(IDX_TCH);
 		rec.userId = static_cast<int32_t>(id);
 
-		auto bytes = rec.toBytes();
+		auto bytes = serializeRecord(rec);
 		size_t idx = appendToChunk(CHUNK_TCH, bytes);
 		if (idx == static_cast<size_t>(-1)) {
 			lastError_ = "Erro ao escrever professor";
 			return false;
 		}
 
-		indexCtrl_.insert("TCH:" + std::to_string(rec.userId), CHUNK_TCH, static_cast<uint32_t>(idx));
-		indexCtrl_.insert("NM:" + name, CHUNK_TCH, static_cast<uint32_t>(idx));
-		indexCtrl_.save();
+		indexCtrl_.insert(std::string(IDX_TCH) + std::to_string(rec.userId), CHUNK_TCH, static_cast<uint32_t>(idx));
+		indexCtrl_.insert(std::string(IDX_NM) + name, CHUNK_TCH, static_cast<uint32_t>(idx));
+		indexCtrl_.insert(std::string(IDX_CPF) + cpf + IDX_CPF_TCH, CHUNK_TCH, static_cast<uint32_t>(idx));
+		std::ignore = indexCtrl_.save();
 
 		return true;
 	}
 
-	auto DataManager::readTeacher(int32_t id) const -> std::optional<project_model::TeacherRecord> {
-		auto idxOpt = indexCtrl_.lookup("TCH:" + std::to_string(id));
+	auto DataManager::readTeacher(int32_t id) const -> std::optional<project_model::Teacher> {
+		auto idxOpt = indexCtrl_.lookup(std::string(IDX_TCH) + std::to_string(id));
 		if (!idxOpt) {
 			lastError_ = "Professor nao encontrado: " + std::to_string(id);
 			return std::nullopt;
 		}
 
 		auto bytes = readFromChunk(CHUNK_TCH, idxOpt->recordIndex);
-		auto rec = project_model::TeacherRecord::fromBytes(bytes);
+		auto rec = project_model::Teacher::fromBytes(bytes);
 		if (!rec.isActive()) {
 			lastError_ = "Registro deletado";
 			return std::nullopt;
@@ -461,15 +476,15 @@ namespace project_controller {
 	}
 
 	auto DataManager::deleteTeacher(int32_t id) -> bool {
-		auto idxOpt = indexCtrl_.lookup("TCH:" + std::to_string(id));
+		auto idxOpt = indexCtrl_.lookup(std::string(IDX_TCH) + std::to_string(id));
 		if (!idxOpt) {
 			lastError_ = "Professor nao encontrado: " + std::to_string(id);
 			return false;
 		}
 
 		if (markDeletedInChunk(CHUNK_TCH, idxOpt->recordIndex)) {
-			indexCtrl_.remove("TCH:" + std::to_string(id));
-			(void)indexCtrl_.save();
+			indexCtrl_.remove(std::string(IDX_TCH) + std::to_string(id));
+			std::ignore = indexCtrl_.save();
 			return true;
 		}
 
@@ -477,8 +492,8 @@ namespace project_controller {
 		return false;
 	}
 
-	auto DataManager::listAllTeachers() const -> std::vector<project_model::TeacherRecord> {
-		return scanAll<project_model::TeacherRecord>(project_utility::CHUNK_TEACHER);
+	auto DataManager::listAllTeachers() const -> std::vector<project_model::Teacher> {
+		return scanAll<project_model::Teacher>(project_utility::CHUNK_TEACHER);
 	}
 
 	// ========================================
@@ -496,39 +511,37 @@ namespace project_controller {
 		}
 
 		SubjectRecord rec;
-		std::strncpy(rec.name, name.c_str(), project_utility::NAME_LEN - 1);
-		rec.name[project_utility::NAME_LEN - 1] = '\0';
-		std::strncpy(rec.code, code.c_str(), project_utility::SUBJ_CODE_LEN - 1);
-		rec.code[project_utility::SUBJ_CODE_LEN - 1] = '\0';
+		writeFixedField(rec.name, name, project_utility::NAME_LEN);
+		writeFixedField(rec.code, code, project_utility::SUBJ_CODE_LEN);
 		rec.credits = credits;
 		rec.teacherId = teacherId;
 
-		auto id = indexCtrl_.nextId("SUB:");
+		auto id = indexCtrl_.nextId(IDX_SUB);
 		rec.subjectId = static_cast<int32_t>(id);
 
-		auto bytes = rec.toBytes();
+		auto bytes = serializeRecord(rec);
 		size_t idx = appendToChunk(CHUNK_SUB, bytes);
 		if (idx == static_cast<size_t>(-1)) {
 			lastError_ = "Erro ao escrever disciplina";
 			return false;
 		}
 
-		indexCtrl_.insert("SUB:" + std::to_string(rec.subjectId), CHUNK_SUB, static_cast<uint32_t>(idx));
-		indexCtrl_.insert("NM:" + name, CHUNK_SUB, static_cast<uint32_t>(idx));
-		indexCtrl_.save();
+		indexCtrl_.insert(std::string(IDX_SUB) + std::to_string(rec.subjectId), CHUNK_SUB, static_cast<uint32_t>(idx));
+		indexCtrl_.insert(std::string(IDX_NM) + name, CHUNK_SUB, static_cast<uint32_t>(idx));
+		std::ignore = indexCtrl_.save();
 
 		return true;
 	}
 
-	auto DataManager::readSubject(int32_t id) const -> std::optional<project_model::SubjectRecord> {
-		auto idxOpt = indexCtrl_.lookup("SUB:" + std::to_string(id));
+	auto DataManager::readSubject(int32_t id) const -> std::optional<project_model::Subject> {
+		auto idxOpt = indexCtrl_.lookup(std::string(IDX_SUB) + std::to_string(id));
 		if (!idxOpt) {
 			lastError_ = "Disciplina nao encontrada: " + std::to_string(id);
 			return std::nullopt;
 		}
 
 		auto bytes = readFromChunk(CHUNK_SUB, idxOpt->recordIndex);
-		auto rec = project_model::SubjectRecord::fromBytes(bytes);
+		auto rec = project_model::Subject::fromBytes(bytes);
 		if (!rec.isActive()) {
 			lastError_ = "Registro deletado";
 			return std::nullopt;
@@ -537,15 +550,15 @@ namespace project_controller {
 	}
 
 	auto DataManager::deleteSubject(int32_t id) -> bool {
-		auto idxOpt = indexCtrl_.lookup("SUB:" + std::to_string(id));
+		auto idxOpt = indexCtrl_.lookup(std::string(IDX_SUB) + std::to_string(id));
 		if (!idxOpt) {
 			lastError_ = "Disciplina nao encontrada: " + std::to_string(id);
 			return false;
 		}
 
 		if (markDeletedInChunk(CHUNK_SUB, idxOpt->recordIndex)) {
-			indexCtrl_.remove("SUB:" + std::to_string(id));
-			(void)indexCtrl_.save();
+			indexCtrl_.remove(std::string(IDX_SUB) + std::to_string(id));
+			std::ignore = indexCtrl_.save();
 			return true;
 		}
 
@@ -553,8 +566,8 @@ namespace project_controller {
 		return false;
 	}
 
-	auto DataManager::listAllSubjects() const -> std::vector<project_model::SubjectRecord> {
-		return scanAll<project_model::SubjectRecord>(project_utility::CHUNK_SUBJECT);
+	auto DataManager::listAllSubjects() const -> std::vector<project_model::Subject> {
+		return scanAll<project_model::Subject>(project_utility::CHUNK_SUBJECT);
 	}
 
 	// ========================================
@@ -567,11 +580,11 @@ namespace project_controller {
 	}
 
 	static std::string enrollmentKey(int32_t studentId, int32_t subjectId) {
-		return "ENR:STU:" + padId(studentId) + ":SUB:" + padId(subjectId);
+		return std::string(IDX_ENR_STU) + padId(studentId) + IDX_ENR_INFIX + padId(subjectId);
 	}
 
 	static std::string enrollmentsByStudentPrefix(int32_t studentId) {
-		return "ENR:STU:" + padId(studentId) + ":";
+		return std::string(IDX_ENR_STU) + padId(studentId) + ":";
 	}
 
 	auto DataManager::enrollStudent(
@@ -592,9 +605,8 @@ namespace project_controller {
 		val.studentId = studentId;
 		val.subjectId = subjectId;
 		val.teacherId = teacherId;
-		val.grade = 0.0f;
-		std::strncpy(val.semester, semester.c_str(), project_utility::SEMESTER_LEN - 1);
-		val.semester[project_utility::SEMESTER_LEN - 1] = '\0';
+		val.grade = 0;
+		writeFixedField(val.semester, semester, project_utility::SEMESTER_LEN);
 
 		if (!btree_.insert(key, val)) {
 			lastError_ = "Erro ao inserir matricula na arvore";
@@ -605,13 +617,20 @@ namespace project_controller {
 	}
 
 	auto DataManager::getEnrollment(int32_t studentId, int32_t subjectId) const
-		-> std::optional<project_model::BTreeLeafValue>
+		-> std::optional<project_model::Enrollment>
 	{
-		return btree_.search(enrollmentKey(studentId, subjectId));
+		auto opt = btree_.search(enrollmentKey(studentId, subjectId));
+		if (!opt) return std::nullopt;
+		return project_model::Enrollment(*opt);
 	}
 
-	auto DataManager::updateGrade(int32_t studentId, int32_t subjectId, float grade) -> bool {
+	auto DataManager::updateGrade(int32_t studentId, int32_t subjectId, uint8_t grade) -> bool {
 		using namespace project_model;
+
+		if (grade > 100) {
+			lastError_ = "Nota deve estar entre 0 e 100";
+			return false;
+		}
 
 		auto key = enrollmentKey(studentId, subjectId);
 		auto opt = btree_.search(key);
@@ -638,47 +657,77 @@ namespace project_controller {
 	}
 
 	auto DataManager::getEnrollmentsByStudent(int32_t studentId) const
-		-> std::vector<project_model::BTreeLeafValue>
+		-> std::vector<project_model::Enrollment>
 	{
 		auto prefix = enrollmentsByStudentPrefix(studentId);
 		auto results = btree_.searchRange(prefix);
-		std::vector<project_model::BTreeLeafValue> out;
+		std::vector<project_model::Enrollment> out;
 		out.reserve(results.size());
 		for (auto& [_, val] : results)
-			out.push_back(val);
+			out.emplace_back(val);
 		return out;
 	}
 
 	auto DataManager::getEnrollmentsBySubject(int32_t subjectId) const
-		-> std::vector<project_model::BTreeLeafValue>
+		-> std::vector<project_model::Enrollment>
 	{
-		auto prefix = std::string("ENR:SUB:") + padId(subjectId) + ":";
-		// We need to scan all enrollments and filter by subject
-		// Since our key is ENR:STU:XXXX:SUB:YYYY, scanning by SUB prefix isn't
-		// efficient with this key scheme. Let's do a full range scan and filter.
-		auto results = btree_.searchRange("ENR:");
-		std::vector<project_model::BTreeLeafValue> out;
+		auto prefix = std::string(IDX_ENR_SUB) + padId(subjectId) + ":";
+		auto results = btree_.searchRange(IDX_ENR);
+		std::vector<project_model::Enrollment> out;
 		out.reserve(results.size());
 		for (auto& [_, val] : results) {
 			if (val.subjectId == subjectId)
-				out.push_back(val);
+				out.emplace_back(val);
 		}
 		return out;
+	}
+
+	// ========================================
+	// Auth
+	// ========================================
+	auto DataManager::login(const std::string& cpf, uint16_t password) const
+		-> std::optional<LoginResult>
+	{
+		using namespace project_model;
+
+		// Try student first
+		auto stuOpt = indexCtrl_.lookup(std::string(IDX_CPF) + cpf + IDX_CPF_STU);
+		if (stuOpt) {
+			int ci = CHUNK_STU;
+			auto bytes = readFromChunk(ci, stuOpt->recordIndex);
+			auto rec = Student::fromBytes(bytes);
+			if (rec.isActive() && rec.getPassword() == password) {
+				return LoginResult{rec.getId(), 'S', rec.getName()};
+			}
+		}
+
+		// Try teacher
+		auto tchOpt = indexCtrl_.lookup(std::string(IDX_CPF) + cpf + IDX_CPF_TCH);
+		if (tchOpt) {
+			int ci = CHUNK_TCH;
+			auto bytes = readFromChunk(ci, tchOpt->recordIndex);
+			auto rec = Teacher::fromBytes(bytes);
+			if (rec.isActive() && rec.getPassword() == password) {
+				return LoginResult{rec.getId(), 'T', rec.getName()};
+			}
+		}
+
+		return std::nullopt;
 	}
 
 	// ========================================
 	// Info methods
 	// ========================================
 	auto DataManager::getNextStudentId() const -> int32_t {
-		return static_cast<int32_t>(indexCtrl_.nextId("STU:"));
+		return static_cast<int32_t>(indexCtrl_.nextId(IDX_STU));
 	}
 
 	auto DataManager::getNextTeacherId() const -> int32_t {
-		return static_cast<int32_t>(indexCtrl_.nextId("TCH:"));
+		return static_cast<int32_t>(indexCtrl_.nextId(IDX_TCH));
 	}
 
 	auto DataManager::getNextSubjectId() const -> int32_t {
-		return static_cast<int32_t>(indexCtrl_.nextId("SUB:"));
+		return static_cast<int32_t>(indexCtrl_.nextId(IDX_SUB));
 	}
 
 	auto DataManager::getActiveCount(char type) const -> int32_t {

@@ -1,6 +1,7 @@
 -- common.lua
 -- Componentes UI compartilhados - tema minimalista 4 cores
 
+local LoginView = require("GUI.functional_views.LoginView")
 local M = {}
 
 M.COLORS = {
@@ -48,7 +49,7 @@ function M.textColored(text, color)
 	if color then M.popColors() end
 end
 
-function M.sidebar(currentView)
+function M.sidebar(currentView, user)
 	imgui.SetNextWindowPos(0, 0, "Always")
 	imgui.SetNextWindowSize(150, 600, "Always")
 
@@ -58,25 +59,37 @@ function M.sidebar(currentView)
 
 		imgui.Text("AEDS III")
 		imgui.Separator()
+		M.textColored("Bem-vindo, " .. (user and user.name or "?"), M.COLORS.Green)
+		imgui.Separator()
 		imgui.Spacing()
 
-		local sections = {
-			{ label = "-- Estudantes --" },
-			{ id = "create",  label = "Cadastrar" },
-			{ id = "list",    label = "Listar" },
-			{ id = "search",  label = "Consultar" },
-			{ label = "-- Professores --" },
-			{ id = "tcreate", label = "Cadastrar" },
-			{ id = "tlist",   label = "Listar" },
-			{ label = "-- Disciplinas --" },
-			{ id = "screate", label = "Cadastrar" },
-			{ id = "slist",   label = "Listar" },
-			{ label = "-- Matriculas --" },
-			{ id = "elist",   label = "Gerenciar" },
-		}
+		local sections = {}
+		if user and user.role == "S" then
+			-- Student sidebar
+			sections = {
+				{ id = "profile", label = "Meus Dados" },
+				{ id = "myenr",   label = "Minhas Matriculas" },
+			}
+		else
+			-- Teacher sidebar
+			sections = {
+				{ label = "-- Estudantes --" },
+				{ id = "create",  label = "Cadastrar" },
+				{ id = "list",    label = "Listar" },
+				{ id = "search",  label = "Consultar" },
+				{ label = "-- Professores --" },
+				{ id = "tcreate", label = "Cadastrar" },
+				{ id = "tlist",   label = "Listar" },
+				{ label = "-- Disciplinas --" },
+				{ id = "screate", label = "Cadastrar" },
+				{ id = "slist",   label = "Listar" },
+				{ label = "-- Matriculas --" },
+				{ id = "elist",   label = "Gerenciar" },
+			}
+		end
 
 		for _, v in ipairs(sections) do
-			if v.label:sub(1, 2) == "--" then
+			if v.label and v.label:sub(1, 2) == "--" then
 				M.textColored(v.label, M.COLORS.Green)
 				imgui.Spacing()
 			else
@@ -89,18 +102,26 @@ function M.sidebar(currentView)
 			end
 		end
 
+		if user and user.role == "T" then
+			imgui.Separator()
+			imgui.Spacing()
+			-- Info counts
+			local dm = getDataManager()
+			if dm then
+				local sc = dm:getActiveCount('S')
+				local tc = dm:getActiveCount('T')
+				local bc = dm:getActiveCount('B')
+				M.textColored("Alunos: " .. tostring(sc), M.COLORS.Green)
+				M.textColored("Prof: " .. tostring(tc), M.COLORS.Green)
+				M.textColored("Disc: " .. tostring(bc), M.COLORS.Green)
+			end
+		end
+
 		imgui.Separator()
 		imgui.Spacing()
-
-		-- Info counts
-		local dm = getDataManager()
-		if dm then
-			local sc = dm:getActiveCount('S')
-			local tc = dm:getActiveCount('T')
-			local bc = dm:getActiveCount('B')
-			M.textColored("Alunos: " .. tostring(sc), M.COLORS.Green)
-			M.textColored("Prof: " .. tostring(tc), M.COLORS.Green)
-			M.textColored("Disc: " .. tostring(bc), M.COLORS.Green)
+		if M.button("Sair", M.COLORS.Red, 130, 25) then
+			LoginView.logout()
+			currentView = "menu"
 		end
 
 		M.popColors(2)
@@ -108,6 +129,13 @@ function M.sidebar(currentView)
 	end
 
 	return currentView
+end
+
+-- Navigation: set by views to request a view change; consumed by router
+M.navigateTo = nil
+
+function M.goTo(viewId)
+	M.navigateTo = viewId
 end
 
 function M.errorPopup(msg)

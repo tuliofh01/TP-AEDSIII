@@ -2,7 +2,7 @@
 -- Lista todas disciplinas ativas
 
 local M = {}
-local common = require("common")
+local common = require("handlers.common")
 
 function M.render()
 	local dm = getDataManager()
@@ -31,7 +31,8 @@ function M.render()
 		imgui.Text("[" .. tostring(s.id) .. "] " .. tostring(s.name) .. " (" .. tostring(s.code) .. ")")
 		imgui.Text("  Creditos: " .. tostring(s.credits) .. " | Professor ID: " .. tostring(s.teacherId))
 
-		imgui.SameLine(500)
+		local aw = imgui.GetContentRegionAvail()
+		imgui.SameLine(aw - 40)
 		if common.button("X", common.COLORS.Red, 30, 20) then
 			dm:deleteSubject(s.id)
 		end

@@ -1,7 +1,7 @@
 # AGENTS.md - TP/AEDSIII Build and Development Guide
 
 > Academic Enrollment System (AEDS III) - Technical Documentation
-> Last Updated: 2026-04-27
+> Last Updated: 2026-06-14
 
 ---
 
@@ -15,13 +15,13 @@
 6. [Project Structure](#6-project-structure)
 7. [Code Conventions](#7-code-conventions)
 8. [Extending the System](#8-extending-the-system)
-9. [Build Logs](#9-build-logs)
+9. [Troubleshooting](#9-troubleshooting)
 
 ---
 
 ## 1. Project Overview
 
-**TP (Trabalho Prático)** is an academic enrollment system built for the AEDS III course at PUC-MG (Pontifícia Universidade Católica de Minas Gerais).
+An academic enrollment system built for the AEDS III course at PUC-MG.
 
 ### Core Technologies
 
@@ -31,13 +31,14 @@
 | CMake 3.20+ | Build system |
 | Lua 5.x | GUI scripting (DSL) |
 | Dear ImGui | GUI framework via hello_imgui |
-| Binary File I/O | Custom data persistence |
+| Binary File I/O | Custom data persistence with B+ Tree indexing |
 
 ### Key Features
 
-- Binary file persistence with fixed-size records (66 bytes per Student)
-- CRUD operations via DAO pattern
+- Binary file persistence with packed fixed-size records (StudentRecord 141 B, TeacherRecord 167 B, SubjectRecord 84 B)
+- B+ Tree indexed storage for enrollment records
 - Lua-based GUI views (acts as DSL)
+- CPF+password login with teacher/student role support
 - Cross-platform support (Windows, macOS, Linux)
 
 ---
@@ -46,50 +47,95 @@
 
 ```
 src/
-├── main.cpp              # Entry point (Lua + Dear ImGui)
-├── models/
-│   └── Student.h       # Entity (66 bytes binary)
-├── dao/
-│   ├── StudentDAO.h    # Data Access Object
-│   └── StudentDAO.cpp  # CRUD implementation
-├── ctrls/
-│   ├── DataManager.hpp # Controller class
-│   └── DataManager.cpp
-├── utils/
-│   └── FileManager.h  # File utilities
-└── views/
-    ├── router.lua     # Navigation controller
-    ├── MainMenu.lua  # Main menu view
-    ├── StudentView.lua
-    ├── CourseView.lua
-    └── common.lua   # Shared UI components
+├── main.cpp                    # Entry point (Lua + Dear ImGui)
+├── model/
+│   ├── Record.hpp              # Packed binary records + generic memcpy serialization
+│   ├── Record.cpp              # Serialization helpers
+│   ├── BPlusTree.hpp           # B+ Tree indexed storage
+│   ├── BPlusTree.cpp           # B+ Tree implementation
+│   ├── Student.hpp             # Student model wrapper
+│   ├── Teacher.hpp             # Teacher model wrapper
+│   ├── Subject.hpp             # Subject model wrapper
+│   └── Enrollment.hpp          # Enrollment model wrapper
+├── controller/
+│   ├── DataManager.hpp         # Main controller (CRUD + login)
+│   ├── DataManager.cpp
+│   ├── FileManager.hpp         # Low-level binary file I/O
+│   ├── FileManager.cpp
+│   ├── IndexCtrl.hpp           # In-memory hash-map index
+│   └── IndexCtrl.cpp
+├── view/
+│   ├── ScriptArchive.hpp       # Binary archive of Lua scripts
+│   ├── ScriptArchive.cpp
+│   ├── bindings/
+│   │   └── ImguiBindings.cpp   # Custom minimal ImGui -> Lua bindings
+│   └── scripts/
+│       ├── handlers/
+│       │   ├── router.lua      # View router/navigation
+│       │   └── common.lua      # Shared UI helpers, navigation
+│       ├── GUI/
+│       │   ├── displayer_views/
+│       │   │   ├── EnrollmentList.lua
+│       │   │   ├── StudentCreate.lua
+│       │   │   ├── StudentDetail.lua
+│       │   │   └── StudentProfile.lua
+│       │   └── functional_views/
+│       │       ├── LoginView.lua     # Login screen
+│       │       ├── MainMenu.lua
+│       │       ├── StudentList.lua
+│       │       ├── SubjectCreate.lua
+│       │       ├── SubjectList.lua
+│       │       ├── TeacherCreate.lua
+│       │       └── TeacherList.lua
+│       └── misc/
+│           ├── globals.lua         # Global Lua state
+│           └── populate_samples.lua# Sample data generation (auto-populate)
+├── utility/
+│   ├── Constants.hpp           # Compile-time constants
+│   └── Enums.hpp               # Enumerations
 
-libs/                    # External dependencies (FetchContent)
+builds/compiled_executable/          # Build output (executable + scripts.bin + assets)
+data/                         # Runtime binary data files (records.dat, records.idx)
+assets/fonts/                 # Fonts for ImGui
+builds/                       # CMake build tree (internals, not output)
+libs/                         # External dependencies
 ├── hello_imgui/
 ├── lua/
-├── ruaaa/
-└── imgui_lua_bindings/
-
-data/
-└── students.dat       # Binary data file
-
+└── luaaa/
+tools/
+└── pack_scripts.cpp          # Script packing tool
 tests/
-└── test_main.cpp   # Unit tests (CLI)
+└── test_main.cpp             # 11 unit tests (CLI)
 ```
 
 ### Data Flow
 
 ```
-C++ main.cpp 
-  → Initialize Lua State
-  → Load ImGui bindings
-  → Bind DataManager to Lua
-  → Load router.lua
-  → HelloImGui::Run() 
-    → RenderUI() callback (Lua)
-      → router.lua
-        → View modules (MainMenu, StudentView, etc.)
+C++ main.cpp
+  -> Initialize Lua State
+  -> Load ImGui bindings (custom ImguiBindings.cpp)
+  -> Register DataManager methods via LuaModule + light userdata
+  -> Load scripts.bin binary archive via ScriptArchive
+  -> HelloImGui::Run()
+    -> RenderUI() callback (Lua)
+      -> router.lua
+        -> View modules (LoginView, MainMenu, StudentList, etc.)
 ```
+
+### Binary File Layout
+
+Single `records.dat` with `records.idx` hash index:
+
+```
+[FileHeader 256 B][ChunkTable 4x32 B][Chunk S][Chunk T][Chunk B][Chunk I]
+```
+
+- Chunk S: StudentRecord (141 B each)
+- Chunk T: TeacherRecord (167 B each)
+- Chunk B: SubjectRecord (84 B each)
+- Chunk I: B+ Tree pages (4096 B each)
+
+FileHeader: magic ("REC1"), version (1), headerSize (256), next IDs, reserved.
 
 ---
 
@@ -103,50 +149,23 @@ C++ main.cpp
 | macOS | Clang 15+, CMake 3.20+, Ninja, OpenGL |
 | Windows | MinGW-w64 (GCC 10+), CMake 3.20+, Ninja, OpenGL, GLFW |
 
-### 3.1 Linux
+### Build Commands
 
 ```bash
-# Clean previous build (if needed)
-rm -rf cmake-build-release_build/CMakeCache.txt cmake-build-release_build/CMakeFiles
-
-# Configure with Ninja
-cmake -G Ninja -S . -B cmake-build-release_build
+# Configure with Ninja (build tree in builds/, output in builds/compiled_executable/)
+cmake -G Ninja -S . -B builds
 
 # Build
-cmake --build cmake-build-release_build
+cmake --build builds
 ```
 
-### 3.2 macOS
+Build uses ccache if available. The `pack_scripts` tool compiles first, then runs to pack all Lua scripts into `builds/compiled_executable/scripts.bin` on every build.
+
+### Alternative: Makefiles
 
 ```bash
-# Clean previous build
-rm -rf cmake-build-release_build/CMakeCache.txt cmake-build-release_build/CMakeFiles
-
-# Configure (Ninja or Makefiles)
-cmake -G Ninja -S . -B cmake-build-release_build
-
-# Build
-cmake --build cmake-build-release_build
-```
-
-### 3.3 Windows (MinGW)
-
-```powershell
-# Clean previous build
-Remove-Item -Recurse -Force cmake-build-release_build/CMakeCache.txt, cmake-build-release_build/CMakeFiles
-
-# Configure with Ninja and MinGW
-cmake -G Ninja -S . -B cmake-build-release_build
-
-# Build
-cmake --build cmake-build-release_build
-```
-
-### Alternative: Using Makefiles (if Ninja not available)
-
-```bash
-cmake -S . -B cmake-build-release_build
-cmake --build cmake-build-release_build
+cmake -S . -B builds
+cmake --build builds
 ```
 
 ---
@@ -155,45 +174,60 @@ cmake --build cmake-build-release_build
 
 ### GUI Mode
 
-After successful build:
-
 ```bash
-cd builds
-./TP_AEDSIII
+./builds/compiled_executable/TPAEDSIII
 ```
 
 Expected behavior:
-- Opens 800x600 window titled "AEDS III - Control Panel"
-- Navigation sidebar on left
-- Main content area on right
+- Opens 800x600 window titled "AEDS III - Sistema de Matricula"
+- Login screen with CPF + password fields
+- Navigation sidebar on left, content area on right
 
-### Command Line Arguments
+### Sample Credentials
 
-None currently supported (v1.0).
+| Role | CPF | Password |
+|------|-----|----------|
+| Teacher | 00000000000 | 1234 |
+| Student | 11111111111 | 1234 |
+
+Sample data (teacher, student, subject) is auto-populated on first run when the database is empty. Delete `data/records.dat` to reset.
 
 ---
 
 ## 5. Running Tests
 
-### Build Tests Only
+11 unit tests covering CRUD, enrollment, grade update, login, and edge cases.
+
+### Build and Run Tests
 
 ```bash
-cmake --build cmake-build-release_build --target run_tests
-```
-
-### Run Tests
-
-```bash
-./builds/run_tests
+cmake --build builds --target run_tests
+./builds/compiled_executable/run_tests
 ```
 
 Expected output:
 ```
-test_create_and_read passed!
-test_remove passed!
+=== DataManager Tests ===
 
-All tests passed successfully!
+[PASS] test_initialize
+[PASS] test_create_student
+[PASS] test_read_student
+[PASS] test_read_nonexistent
+[PASS] test_list_all_students
+[PASS] test_soft_delete
+[PASS] test_create_teacher_and_subject
+[PASS] test_enrollment
+[PASS] test_update_grade
+[PASS] test_enrollments_by_student
+[PASS] test_login
+
+============================
+Total: 11 | Pass: 11 | Fail: 0
+============================
+ALL TESTS PASSED!
 ```
+
+Each test creates a fresh `data/test/` directory (cleaned up on start).
 
 ---
 
@@ -202,36 +236,52 @@ All tests passed successfully!
 ### Source Files
 
 | Path | Description |
-|------|------------|
+|------|-------------|
 | `src/main.cpp` | Application entry point |
-| `src/models/Student.h` | Student entity (66 bytes) |
-| `src/dao/StudentDAO.h` | Student DAO interface |
-| `src/dao/StudentDAO.cpp` | Student DAO implementation |
-| `src/ctrls/DataManager.hpp` | Controller header |
-| `src/ctrls/DataManager.cpp` | Controller implementation |
-| `src/utils/FileManager.h` | File utilities |
-| `src/views/router.lua` | View router/navigation |
-| `src/views/MainMenu.lua` | Main menu view |
-| `src/views/StudentView.lua` | Student management view |
-| `src/views/CourseView.lua` | Course management view |
-| `src/views/common.lua` | Shared UI components |
+| `src/model/Record.hpp` | Packed binary structures + memcpy serialization |
+| `src/model/Record.cpp` | Record toBytes/fromBytes helpers |
+| `src/model/BPlusTree.hpp` | B+ Tree indexed storage (header) |
+| `src/model/BPlusTree.cpp` | B+ Tree implementation (insert, search, erase, range) |
+| `src/model/Student.hpp` | Student model wrapper |
+| `src/model/Teacher.hpp` | Teacher model wrapper |
+| `src/model/Subject.hpp` | Subject model wrapper |
+| `src/model/Enrollment.hpp` | Enrollment model wrapper (BTreeLeafValue) |
+| `src/controller/DataManager.hpp` | Main controller header |
+| `src/controller/DataManager.cpp` | CRUD + login + enrollment logic |
+| `src/controller/FileManager.hpp` | Low-level binary file I/O header |
+| `src/controller/FileManager.cpp` | Read/write/seek file operations |
+| `src/controller/IndexCtrl.hpp` | Hash-map index header |
+| `src/controller/IndexCtrl.cpp` | DJB2 hash, persistence, rebuild |
+| `src/view/ScriptArchive.hpp` | Binary Lua script archive header |
+| `src/view/ScriptArchive.cpp` | Load .lua files, register via Lua require |
+| `src/view/bindings/ImguiBindings.cpp` | Custom ImGui->Lua bindings |
+| `src/utility/Constants.hpp` | Compile-time size/layout constants |
+| `src/utility/Enums.hpp` | Enum definitions (RecStatus, RecType) |
 
-### Data Files
+### Build Output
 
 | Path | Description |
 |------|-------------|
-| `data/students.dat` | Binary student records |
-| `builds/TP_AEDSIII` | GUI executable |
-| `builds/run_tests` | Test executable |
+| `builds/compiled_executable/TPAEDSIII` | GUI executable |
+| `builds/compiled_executable/run_tests` | Test executable |
+| `builds/compiled_executable/scripts.bin` | Packed Lua scripts archive |
+| `builds/compiled_executable/pack_scripts` | Script packing tool |
+| `builds/compiled_executable/assets/` | Copied assets (fonts) |
 
-### Library Files (Fetched)
+### Data Files (runtime)
+
+| Path | Description |
+|------|-------------|
+| `data/records.dat` | Binary records file (header + chunks) |
+| `data/records.idx` | Hash index file (persisted unordered_map) |
+
+### Library Dependencies
 
 | Path | Source |
 |------|--------|
 | `libs/hello_imgui/` | https://github.com/pthom/hello_imgui.git |
 | `libs/lua/` | https://github.com/marovira/lua.git |
 | `libs/luaaa/` | https://github.com/gengyong/luaaa.git |
-| `libs/imgui_lua_bindings/` | https://github.com/patrickriordan/imgui_lua_bindings.git |
 
 ---
 
@@ -240,13 +290,25 @@ All tests passed successfully!
 ### C++ Style
 
 - **Standard**: C++20 (`set(CMAKE_CXX_STANDARD 20)`)
-- **Include Guards**: `#ifndef FILE_H` / `#define FILE_H` / `#endif`
-- **Naming**: 
-  - Classes: `PascalCase` (e.g., `StudentDAO`)
-  - Methods: `camelCase` (e.g., `processItem`)
-  - Members: `_camelCase` (e.g., `_status`)
-- **Memory**: Use `std::unique_ptr` for ownership transfer
-- **Integer Types**: Use `<cstdint>` (`std::int32_t`, `std::uint32_t`)
+- **Include Guards**: `#pragma once`
+- **Namespaces**: `project_model`, `project_controller`, `project_view`, `project_utility`
+- **Naming**:
+  - Classes: `PascalCase` (e.g., `DataManager`, `BPlusTree`)
+  - Methods: `camelCase` (e.g., `initialize`, `createStudent`)
+  - Members: `_camelCase` (e.g., `dataFile_`, `lastError_`)
+- **Memory**: Composition over heap allocation; `std::optional` for nullable returns
+- **Integer Types**: `<cstdint>` (`int32_t`, `uint8_t`, `uint16_t`, `uint32_t`, `size_t`)
+- **Persistence**: `#pragma pack(push,1)` + memcpy serialization via `serializeRecord<T>()` / `deserializeRecord<T>()`
+
+### C++20 Features Used
+
+- Range-based for loops with `const auto&`
+- `auto` type deduction throughout
+- `std::ignore` for unused parameters
+- `constexpr` constants page geometry (PAGE_TYPE_OFF, NUM_KEYS_OFF, etc.)
+- `[[maybe_unused]]` where appropriate
+- `std::optional<T>` for nullable return values
+- `requires std::is_trivially_copyable_v<T>` on serialization templates
 
 ### Lua Style
 
@@ -268,109 +330,81 @@ return M
 
 - Fixed-size records only (no pointers)
 - Use `<cstdint>` types for portability
-- No `std::string` in persistable structs
-- Logical deletion via `bool removed` flag
+- No `std::string` in persistable structs; use `char[]` + `nameStr()` helpers
+- Logical deletion via `char status` flag (`'A'` = active, `'*'` = deleted)
+- Generic memcpy serialization for any trivially copyable type
+
+### Lua Binding Conventions
+
+All DataManager methods are registered via `luaaa::LuaModule` (not `LuaClass`) to avoid the `MemberFunctionCaller` bug where `skip=1` shifts stack arguments. A `DataManager*` is pushed as a light userdata with a metatable whose `__index` points to the module table. This ensures `NonMemberFunctionCaller` (skip=0) is used, so `DM*` is correctly at stack position 1.
 
 ---
 
-## 8. Extending the System
+## 8. Key Facts
 
-### 8.1 Adding a New Entity
+| Item | Value |
+|------|-------|
+| StudentRecord size | 141 B |
+| TeacherRecord size | 167 B |
+| SubjectRecord size | 84 B |
+| BTreeLeafValue size | 25 B |
+| B+ Tree leaf entry | 45 B (20 key + 25 value) |
+| B+ Tree leaf max keys | 90 |
+| B+ Tree leaf min keys | 45 |
+| B+ Tree page size | 4096 B |
+| FileHeader size | 256 B |
+| ChunkInfo size | 32 B |
+| Initial chunk capacity | 100 |
+| Grade threshold | 60 / 100 (uint8_t) |
+| Unit tests | 11 |
+| Window title | "AEDS III - Sistema de Matricula" |
+| Header magic | "REC1" (0x52454331) |
+| Index magic | "INDE" (0x494E4445) |
+| `klassName` bug fix | Changed to `className` in libs/luaaa/luaaa.hpp |
 
-1. Create model in `src/models/NewEntity.h`
-2. Create DAO in `src/dao/NewEntityDAO.h` and `.cpp`
-3. Add to CMakeLists.txt if needed
+---
 
-Example:
-```cpp
-// src/models/Course.h
-#pragma once
-#include <cstdint>
+## 9. Extending the System
 
-struct Course {
-    bool removed;
-    std::int32_t _id;
-    char name[50];
-    char code[20];
-    std::int32_t credits;
-};
-```
+### Adding a New Entity
 
-### 8.2 Adding a New View
+1. Define packed struct in `model/Record.hpp` (`#pragma pack(push,1)`)
+2. Create model wrapper in `model/<Name>.hpp` with `serialize()` / `fromBytes()` / `raw()`
+3. Add CRUD methods to `controller/DataManager`
+4. Add LuaStack specialization in `main.cpp`
+5. Register method in `dmMethods.fun()` lambda block
 
-1. Create Lua file in `src/views/NewView.lua`
-2. Module must export `render()` function
-3. Register in `router.lua`:
+### Adding a New View
+
+1. Create `.lua` file in `view/scripts/GUI/functional_views/` (action views) or `displayer_views/` (display views)
+2. Module must export a `render()` function
+3. Register in `view/scripts/handlers/router.lua`:
 
 ```lua
-local NewView = require("src.views.NewView")
+local NewView = require("GUI.functional_views.NewView")
 
--- In router.scripts renderContent():
-elseif currentView == "new" then
+-- In renderContent():
+elseif currentView == "new_view" then
     NewView.render()
 end
 ```
 
-### 8.3 Binding C++ to Lua
+### Registering Lua Scripts
 
-Use ruaaa in `main.cpp`:
+Scripts are packed into `scripts.bin` automatically by the `pack_scripts_always` CMake custom target, which scans `src/view/scripts/` recursively. No recompilation is needed — just create `.lua` files under the scripts directory and rebuild.
+
+### Binding C++ to Lua
 
 ```cpp
-#include "../libs/luaaa/luaaa.hpp"
-
-luaaa::LuaClass<MyClass> luaMyClass(L, "MyClass");
-luaMyClass.ctor();
-luaMyClass.fun("myMethod", &MyClass::myMethod);
-luaMyClass.get("myProperty", &MyClass::getProperty);
+luaaa::LuaModule dmMethods(L, "dm_methods");
+dmMethods.fun("myMethod", [](DM* dm, int arg) { return dm->myMethod(arg); });
 ```
+
+All registered functions receive `DM*` as first argument (via light userdata + __index).
 
 ---
 
-## 9. Build Logs
-
-### Build #2 - 2026-04-29
-
-**Status**: ✅ Completed
-
-**Changes Made**:
-1. Fixed include paths in main.cpp to use CMake-managed include directories instead of hardcoded relative paths
-2. Fixed LoadImguiBindings function signature to match actual implementation
-3. Added hello_imgui include path to CMakeLists.txt
-4. Replaced incompatible imgui_lua_bindings with custom minimal ImGui bindings (src/lua/ImguiBindings.cpp)
-5. Fixed CMake target name: `hello_imgui::hello_imgui` → `hello-imgui::hello_imgui`
-
-**Issues Resolved**:
-- imgui_lua_bindings was incompatible with newer ImGui API (built with hello_imgui)
-- Created custom minimal binding with essential functions: Begin, End, Text, Button, Separator, SetNextWindowPos, SetNextWindowSize, InputText, InputInt, InputFloat, SameLine, etc.
-
-**Build Command**:
-```bash
-rm -rf cmake-build-release_build
-cmake -G Ninja -S . -B cmake-build-release_build
-cmake --build cmake-build-release_build
-```
-
-### Build #1 - 2026-04-27
-
-**Status**: ✅ Completed
-
-**Changes Made**:
-1. Fixed CMake generator conflict (removed Unix Makefiles cache)
-2. Rewrote CMakeLists.txt with cross-platform support (Ninja + Windows/Mac/Linux)
-3. Fixed DataManager declaration and implementation
-4. Created router.lua with view navigation
-5. Updated main.cpp with Lua path setup
-6. Created AGENTS.md
-
-**Build Command**:
-```bash
-cmake -G Ninja -S . -B cmake-build-release_build
-cmake --build cmake-build-release_build
-```
-
----
-
-## Troubleshooting
+## 10. Troubleshooting
 
 ### CMake: Generator Mismatch
 
@@ -378,7 +412,7 @@ cmake --build cmake-build-release_build
 
 **Fix**: Clear CMake cache
 ```bash
-rm -rf cmake-build-release_build/CMakeCache.txt cmake-build-release_build/CMakeFiles
+rm -rf builds/CMakeCache.txt builds/CMakeFiles
 ```
 
 ### CMake: Missing Dependencies
@@ -390,11 +424,15 @@ rm -rf cmake-build-release_build/CMakeCache.txt cmake-build-release_build/CMakeF
 - macOS: `brew install glfw`
 - Windows: MinGW includes GLFW (via MSYS2)
 
-### Lua: File Not Found
+### Lua: Script Not Found
 
-**Error**: `Lua Script Error: cannot open src/views/router.lua`
+**Error**: scripts.bin loads but specific require fails
 
-**Fix**: Run from project root directory, or check working directory in IDE.
+**Fix**: Verify the `.lua` file exists under `src/view/scripts/`. The `pack_scripts` tool walks the directory recursively. Run `./builds/compiled_executable/pack_scripts src/view/scripts builds/compiled_executable/scripts.bin` manually to inspect.
+
+### Data File Corruption
+
+Delete `data/records.dat` and `data/records.idx` to start fresh.
 
 ---
 
@@ -402,12 +440,12 @@ rm -rf cmake-build-release_build/CMakeCache.txt cmake-build-release_build/CMakeF
 
 | Command | Action |
 |---------|--------|
-| `cmake -G Ninja -S . -B build` | Configure |
-| `cmake --build build` | Build |
-| `./builds/TP_AEDSIII` | Run GUI |
-| `./builds/run_tests` | Run Tests |
-| `rm -rf build/CMakeCache.txt build/CMakeFiles` | Clean Cache |
+| `cmake -G Ninja -S . -B builds` | Configure |
+| `cmake --build builds` | Build |
+| `./builds/compiled_executable/TPAEDSIII` | Run GUI |
+| `./builds/compiled_executable/run_tests` | Run Tests |
+| `rm -rf builds/CMakeCache.txt builds/CMakeFiles` | Clean Cache |
 
 ---
 
-*This document is maintained with the project. Last updated: 2026-04-27*
+*This document is maintained with the project. Last updated: 2026-06-14*

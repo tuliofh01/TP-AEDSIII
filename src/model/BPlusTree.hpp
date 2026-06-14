@@ -1,3 +1,7 @@
+// B+ Tree implementation for on-disk indexed storage.
+// Supports insert, search (exact + prefix range), and erase operations.
+// Pages are fixed-size; header and nodes are persisted in a binary file chunk.
+
 #pragma once
 
 #include <cstdint>
@@ -27,12 +31,14 @@ namespace project_model {
 		static constexpr size_t KEY_SIZE = project_utility::BTREE_KEY_SIZE;
 		static constexpr size_t CHUNK_HEADER = sizeof(int64_t) + sizeof(size_t) + sizeof(size_t);
 		static constexpr size_t INTERNAL_ENTRY = project_utility::BTREE_INTERNAL_ENTRY_SIZE;
-		static constexpr size_t LEAF_ENTRY = project_utility::BTREE_LEAF_ENTRY_SIZE;
-		static constexpr size_t LEAF_VALUE_SIZE = project_utility::BTREE_LEAF_VALUE_SIZE;
 		static constexpr size_t INTERNAL_MAX = project_utility::BTREE_INTERNAL_MAX_KEYS;
-		static constexpr size_t LEAF_MAX = project_utility::BTREE_LEAF_MAX_KEYS;
 		static constexpr size_t INTERNAL_MIN = project_utility::BTREE_INTERNAL_MIN_KEYS;
-		static constexpr size_t LEAF_MIN = project_utility::BTREE_LEAF_MIN_KEYS;
+
+		// Leaf constants computed from actual BTreeLeafValue size
+		static constexpr size_t LEAF_VALUE_SIZE = sizeof(BTreeLeafValue);
+		static constexpr size_t LEAF_ENTRY = KEY_SIZE + LEAF_VALUE_SIZE;
+		static constexpr size_t LEAF_MAX = (PAGE_SIZE - HEADER_SIZE) / LEAF_ENTRY;
+		static constexpr size_t LEAF_MIN = LEAF_MAX / 2;
 
 		BPlusTree() = default;
 		~BPlusTree() = default;
@@ -40,8 +46,10 @@ namespace project_model {
 		BPlusTree(const BPlusTree&) = delete;
 		BPlusTree& operator=(const BPlusTree&) = delete;
 
+		// Lifecycle
 		bool initialize(std::fstream& file, size_t chunkOffset, size_t initialPages);
 
+		// CRUD operations
 		bool insert(const std::string& key, const BTreeLeafValue& value);
 		std::optional<BTreeLeafValue> search(const std::string& key) const;
 		std::vector<std::pair<std::string, BTreeLeafValue>>
@@ -50,7 +58,7 @@ namespace project_model {
 
 		size_t size() const { return fileHeader_.entryCount; }
 		int64_t rootId() const { return fileHeader_.rootPageId; }
-		bool empty() const { return fileHeader_.rootPageId < 0; }
+		bool empty() const { return fileHeader_.pageCount == 0; }
 
 	private:
 		std::fstream* file_ = nullptr;
@@ -69,21 +77,21 @@ namespace project_model {
 		void loadHeader();
 
 		// Page field accessors
-		static char& pageType(std::byte* buf);
-		static uint16_t& pageNumKeys(std::byte* buf);
-		static int64_t& pageParent(std::byte* buf);
-		static int64_t& pageNextLeaf(std::byte* buf);
-		static int64_t& pagePrevLeaf(std::byte* buf);
+		static char& pageType(std::byte* pageBuf);
+		static uint16_t& pageNumKeys(std::byte* pageBuf);
+		static int64_t& pageParent(std::byte* pageBuf);
+		static int64_t& pageNextLeaf(std::byte* pageBuf);
+		static int64_t& pagePrevLeaf(std::byte* pageBuf);
 
 		// Internal node accessors
-		static int64_t& internalChild(std::byte* buf, size_t index);
-		static std::byte* internalKeyPtr(std::byte* buf, size_t index);
+		static int64_t& internalChild(std::byte* pageBuf, size_t index);
+		static std::byte* internalKeyPtr(std::byte* pageBuf, size_t index);
 
 		// Leaf node accessors
-		static std::byte* leafEntryPtr(std::byte* buf, size_t index);
-		static void leafSetEntry(std::byte* buf, size_t index,
+		static std::byte* leafEntryPtr(std::byte* pageBuf, size_t index);
+		static void leafSetEntry(std::byte* pageBuf, size_t index,
 			const std::string& key, const BTreeLeafValue& value);
-		static void leafGetEntry(const std::byte* buf, size_t index,
+		static void leafGetEntry(const std::byte* pageBuf, size_t index,
 			std::string& key, BTreeLeafValue& value);
 
 		// Core algorithms

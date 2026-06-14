@@ -2,11 +2,12 @@
 -- Formulario de cadastro de estudante
 
 local M = {}
-local common = require("common")
+local common = require("handlers.common")
 
 local nameBuf = ""
 local emailBuf = ""
 local cpfBuf = ""
+local passBuf = ""
 local birthBuf = ""
 local courseBuf = ""
 local yearBuf = ""
@@ -17,31 +18,43 @@ function M.render()
 	imgui.Spacing()
 
 	imgui.Text("Nome:")
+	imgui.SetNextItemWidth(-1)
 	imgui.PushID("stu_name")
 	nameBuf = imgui.InputText("##name", nameBuf)
 	imgui.PopID()
 
 	imgui.Text("Email:")
+	imgui.SetNextItemWidth(-1)
 	imgui.PushID("stu_email")
 	emailBuf = imgui.InputText("##email", emailBuf)
 	imgui.PopID()
 
 	imgui.Text("CPF:")
+	imgui.SetNextItemWidth(-1)
 	imgui.PushID("stu_cpf")
 	cpfBuf = imgui.InputText("##cpf", cpfBuf)
 	imgui.PopID()
 
+	imgui.Text("Senha numerica:")
+	imgui.SetNextItemWidth(-1)
+	imgui.PushID("stu_pass")
+	passBuf = imgui.InputText("##pass", passBuf)
+	imgui.PopID()
+
 	imgui.Text("Nascimento (DDMMAAAA):")
+	imgui.SetNextItemWidth(-1)
 	imgui.PushID("stu_birth")
 	birthBuf = imgui.InputText("##birth", birthBuf)
 	imgui.PopID()
 
 	imgui.Text("Curso:")
+	imgui.SetNextItemWidth(-1)
 	imgui.PushID("stu_course")
 	courseBuf = imgui.InputText("##course", courseBuf)
 	imgui.PopID()
 
 	imgui.Text("Ano Ingresso:")
+	imgui.SetNextItemWidth(-1)
 	imgui.PushID("stu_year")
 	yearBuf = imgui.InputText("##year", yearBuf)
 	imgui.PopID()
@@ -56,9 +69,10 @@ function M.render()
 			else
 				local birthDate = tonumber(birthBuf) or 0
 				local year = tonumber(yearBuf) or 0
-				local ok = dm:createStudent(nameBuf, emailBuf, cpfBuf, birthDate, courseBuf, year)
+				local pass = tonumber(passBuf) or 0
+				local ok = dm:createStudent(nameBuf, emailBuf, cpfBuf, pass, birthDate, courseBuf, year)
 				if ok then
-					nameBuf = ""; emailBuf = ""; cpfBuf = ""
+					nameBuf = ""; emailBuf = ""; cpfBuf = ""; passBuf = ""
 					birthBuf = ""; courseBuf = ""; yearBuf = ""
 					common.errorPopup("Estudante cadastrado com sucesso!")
 				else

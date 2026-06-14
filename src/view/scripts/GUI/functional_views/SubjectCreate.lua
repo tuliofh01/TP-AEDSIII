@@ -2,7 +2,7 @@
 -- Formulario de cadastro de disciplina
 
 local M = {}
-local common = require("common")
+local common = require("handlers.common")
 
 local nameBuf = ""
 local codeBuf = ""
@@ -15,21 +15,25 @@ function M.render()
 	imgui.Spacing()
 
 	imgui.Text("Nome:")
+	imgui.SetNextItemWidth(-1)
 	imgui.PushID("sub_name")
 	nameBuf = imgui.InputText("##name", nameBuf)
 	imgui.PopID()
 
 	imgui.Text("Codigo:")
+	imgui.SetNextItemWidth(-1)
 	imgui.PushID("sub_code")
 	codeBuf = imgui.InputText("##code", codeBuf)
 	imgui.PopID()
 
 	imgui.Text("Creditos:")
+	imgui.SetNextItemWidth(-1)
 	imgui.PushID("sub_credits")
 	creditsBuf = imgui.InputText("##credits", creditsBuf)
 	imgui.PopID()
 
 	imgui.Text("ID Professor:")
+	imgui.SetNextItemWidth(-1)
 	imgui.PushID("sub_teacher")
 	teacherBuf = imgui.InputText("##teacher", teacherBuf)
 	imgui.PopID()

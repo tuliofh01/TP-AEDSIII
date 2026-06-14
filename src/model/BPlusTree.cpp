@@ -8,22 +8,11 @@ namespace project_model {
 	// BTreeFileHeader
 	// ========================================
 	auto BTreeFileHeader::toBytes() const -> std::vector<std::byte> {
-		std::vector<std::byte> bytes(24);
-		RecordSerializer::write(bytes.data(), 0, rootPageId);
-		RecordSerializer::write(bytes.data(), 8, entryCount);
-		RecordSerializer::write(bytes.data(), 16, pageCount);
-		return bytes;
+		return serializeRecord(*this);
 	}
 
 	auto BTreeFileHeader::fromBytes(const std::vector<std::byte>& data) -> BTreeFileHeader {
-		BTreeFileHeader hdr;
-		if (data.size() >= 24) {
-			auto* buf = data.data();
-			hdr.rootPageId = RecordSerializer::read<int64_t>(buf, 0);
-			hdr.entryCount = RecordSerializer::read<size_t>(buf, 8);
-			hdr.pageCount = RecordSerializer::read<size_t>(buf, 16);
-		}
-		return hdr;
+		return deserializeRecord<BTreeFileHeader>(data);
 	}
 
 	// ========================================
@@ -37,8 +26,8 @@ namespace project_model {
 		// Try to read existing header
 		loadHeader();
 
-		// If no root, allocate initial pages
-		if (fileHeader_.rootPageId < 0) {
+		// If no pages, allocate initial pages
+		if (fileHeader_.pageCount == 0) {
 			fileHeader_.pageCount = initialPages;
 			for (size_t i = 0; i < initialPages; ++i) {
 				auto page = newPage('L');
@@ -56,8 +45,8 @@ namespace project_model {
 		return raw;
 	}
 
-	std::string BPlusTree::extractKey(const std::byte* buf) {
-		return std::string(reinterpret_cast<const char*>(buf), KEY_SIZE).c_str();
+	std::string BPlusTree::extractKey(const std::byte* pageBuf) {
+		return std::string(reinterpret_cast<const char*>(pageBuf), KEY_SIZE).c_str();
 	}
 
 	int64_t BPlusTree::allocatePage(char type) {
@@ -78,17 +67,18 @@ namespace project_model {
 		return page;
 	}
 
-	void BPlusTree::readPage(int64_t pageId, std::vector<std::byte>& buf) const {
-		buf.resize(PAGE_SIZE);
+	void BPlusTree::readPage(int64_t pageId, std::vector<std::byte>& pageBuf) const {
+		pageBuf.resize(PAGE_SIZE);
 		size_t offset = chunkOffset_ + CHUNK_HEADER + static_cast<size_t>(pageId) * PAGE_SIZE;
 		file_->seekg(static_cast<std::streamoff>(offset), std::ios::beg);
-		file_->read(reinterpret_cast<char*>(buf.data()), PAGE_SIZE);
+		file_->read(reinterpret_cast<char*>(pageBuf.data()), PAGE_SIZE);
 	}
 
-	void BPlusTree::writePage(int64_t pageId, const std::vector<std::byte>& buf) {
+	void BPlusTree::writePage(int64_t pageId, const std::vector<std::byte>& pageBuf) {
 		size_t offset = chunkOffset_ + CHUNK_HEADER + static_cast<size_t>(pageId) * PAGE_SIZE;
 		file_->seekp(static_cast<std::streamoff>(offset), std::ios::beg);
-		file_->write(reinterpret_cast<const char*>(buf.data()), PAGE_SIZE);
+		file_->write(reinterpret_cast<const char*>(pageBuf.data()), PAGE_SIZE);
+		file_->flush();
 	}
 
 	void BPlusTree::saveHeader() {
@@ -98,69 +88,82 @@ namespace project_model {
 	}
 
 	void BPlusTree::loadHeader() {
-		std::vector<std::byte> hdrBytes(24);
+		std::vector<std::byte> hdrBytes(CHUNK_HEADER);
 		file_->seekg(static_cast<std::streamoff>(chunkOffset_), std::ios::beg);
-		file_->read(reinterpret_cast<char*>(hdrBytes.data()), 24);
+		file_->read(reinterpret_cast<char*>(hdrBytes.data()), CHUNK_HEADER);
 		fileHeader_ = BTreeFileHeader::fromBytes(hdrBytes);
 	}
 
 	// ========================================
 	// Page field accessors
 	// ========================================
-	char& BPlusTree::pageType(std::byte* buf) {
-		return *reinterpret_cast<char*>(buf);
+	// Page header layout:
+	// [0] char    pageType     (1 byte)
+	// [1] uint16  pageNumKeys  (2 bytes)
+	// [3] int64   parentId     (8 bytes)
+	// [11] int64  nextLeafId   (8 bytes)
+	// [19] int64  prevLeafId   (8 bytes)
+	// Total header = 27 bytes; HEADER_SIZE=31 (4 bytes padding for alignment)
+	static constexpr auto  PAGE_TYPE_OFF    = size_t{0};
+	static constexpr auto  NUM_KEYS_OFF     = size_t{1};
+	static constexpr auto  PARENT_OFF       = size_t{3};
+	static constexpr auto  NEXT_LEAF_OFF    = size_t{11};
+	static constexpr auto  PREV_LEAF_OFF    = size_t{19};
+
+	char& BPlusTree::pageType(std::byte* pageBuf) {
+		return *reinterpret_cast<char*>(pageBuf + PAGE_TYPE_OFF);
 	}
 
-	uint16_t& BPlusTree::pageNumKeys(std::byte* buf) {
-		return *reinterpret_cast<uint16_t*>(buf + 1);
+	uint16_t& BPlusTree::pageNumKeys(std::byte* pageBuf) {
+		return *reinterpret_cast<uint16_t*>(pageBuf + NUM_KEYS_OFF);
 	}
 
-	int64_t& BPlusTree::pageParent(std::byte* buf) {
-		return *reinterpret_cast<int64_t*>(buf + 3);
+	int64_t& BPlusTree::pageParent(std::byte* pageBuf) {
+		return *reinterpret_cast<int64_t*>(pageBuf + PARENT_OFF);
 	}
 
-	int64_t& BPlusTree::pageNextLeaf(std::byte* buf) {
-		return *reinterpret_cast<int64_t*>(buf + 11);
+	int64_t& BPlusTree::pageNextLeaf(std::byte* pageBuf) {
+		return *reinterpret_cast<int64_t*>(pageBuf + NEXT_LEAF_OFF);
 	}
 
-	int64_t& BPlusTree::pagePrevLeaf(std::byte* buf) {
-		return *reinterpret_cast<int64_t*>(buf + 19);
+	int64_t& BPlusTree::pagePrevLeaf(std::byte* pageBuf) {
+		return *reinterpret_cast<int64_t*>(pageBuf + PREV_LEAF_OFF);
 	}
 
 	// ========================================
 	// Internal node accessors
 	// ========================================
-	int64_t& BPlusTree::internalChild(std::byte* buf, size_t index) {
-		return *reinterpret_cast<int64_t*>(buf + HEADER_SIZE + index * INTERNAL_ENTRY);
+	int64_t& BPlusTree::internalChild(std::byte* pageBuf, size_t index) {
+		return *reinterpret_cast<int64_t*>(pageBuf + HEADER_SIZE + index * INTERNAL_ENTRY);
 	}
 
-	std::byte* BPlusTree::internalKeyPtr(std::byte* buf, size_t index) {
-		return buf + HEADER_SIZE + INTERNAL_ENTRY + (index - 1) * INTERNAL_ENTRY;
+	std::byte* BPlusTree::internalKeyPtr(std::byte* pageBuf, size_t index) {
+		return pageBuf + HEADER_SIZE + INTERNAL_ENTRY + (index - 1) * INTERNAL_ENTRY;
 	}
 
 	// ========================================
 	// Leaf node accessors
 	// ========================================
-	std::byte* BPlusTree::leafEntryPtr(std::byte* buf, size_t index) {
-		return buf + HEADER_SIZE + index * LEAF_ENTRY;
+	std::byte* BPlusTree::leafEntryPtr(std::byte* pageBuf, size_t index) {
+		return pageBuf + HEADER_SIZE + index * LEAF_ENTRY;
 	}
 
-	void BPlusTree::leafSetEntry(std::byte* buf, size_t index,
+	void BPlusTree::leafSetEntry(std::byte* pageBuf, size_t index,
 		const std::string& key, const BTreeLeafValue& value) {
-		auto* entry = leafEntryPtr(buf, index);
+		auto* entry = leafEntryPtr(pageBuf, index);
 		std::memset(entry, 0, LEAF_ENTRY);
 		size_t copyLen = std::min(key.size(), KEY_SIZE - 1);
 		std::memcpy(entry, key.data(), copyLen);
-		auto valBytes = value.toBytes();
+		auto valBytes = serializeRecord(value);
 		std::memcpy(entry + KEY_SIZE, valBytes.data(), LEAF_VALUE_SIZE);
 	}
 
-	void BPlusTree::leafGetEntry(const std::byte* buf, size_t index,
+	void BPlusTree::leafGetEntry(const std::byte* pageBuf, size_t index,
 		std::string& key, BTreeLeafValue& value) {
-		auto* entry = buf + HEADER_SIZE + index * LEAF_ENTRY;
+		auto* entry = pageBuf + HEADER_SIZE + index * LEAF_ENTRY;
 		key = std::string(reinterpret_cast<const char*>(entry), KEY_SIZE).c_str();
 		std::vector<std::byte> valBytes(entry + KEY_SIZE, entry + KEY_SIZE + LEAF_VALUE_SIZE);
-		value = BTreeLeafValue::fromBytes(valBytes);
+		value = deserializeRecord<BTreeLeafValue>(valBytes);
 	}
 
 	// ========================================
@@ -175,28 +178,28 @@ namespace project_model {
 		const std::string& key) const {
 		std::vector<std::byte> page(PAGE_SIZE);
 		readPage(nodeId, page);
-		auto* buf = page.data();
+		auto* pageBuf = page.data();
 
-		if (pageType(buf) == 'L') {
+		if (pageType(pageBuf) == 'L') {
 			// Leaf node: scan entries
-			uint16_t n = pageNumKeys(buf);
-			for (uint16_t i = 0; i < n; ++i) {
+			uint16_t keyCount = pageNumKeys(pageBuf);
+			for (uint16_t i = 0; i < keyCount; ++i) {
 				std::string entryKey;
 				BTreeLeafValue val;
-				leafGetEntry(buf, i, entryKey, val);
+				leafGetEntry(pageBuf, i, entryKey, val);
 				if (entryKey == key) return val;
 			}
 			return std::nullopt;
 		}
 
 		// Internal node: find correct child
-		uint16_t n = pageNumKeys(buf);
+		uint16_t keyCount = pageNumKeys(pageBuf);
 		size_t childIdx = 0;
-		for (uint16_t i = 1; i <= n; ++i) {
+		for (uint16_t i = 1; i <= keyCount; ++i) {
 			std::string sepKey;
 			BTreeLeafValue dummy;
-			auto* kp = internalKeyPtr(buf, i);
-			sepKey = extractKey(kp);
+			auto* keyPtr = internalKeyPtr(pageBuf, i);
+			sepKey = extractKey(keyPtr);
 			if (key < sepKey) {
 				childIdx = static_cast<size_t>(i - 1);
 				goto descend;
@@ -204,7 +207,7 @@ namespace project_model {
 			childIdx = static_cast<size_t>(i);
 		}
 		descend:
-		int64_t childId = internalChild(buf, childIdx);
+		int64_t childId = internalChild(pageBuf, childIdx);
 		return searchInNode(childId, key);
 	}
 
@@ -224,14 +227,14 @@ namespace project_model {
 
 		std::vector<std::byte> page(PAGE_SIZE);
 		readPage(nodeId, page);
-		auto* buf = page.data();
+		auto* pageBuf = page.data();
 
-		if (pageType(buf) == 'I') {
-			uint16_t n = pageNumKeys(buf);
+		if (pageType(pageBuf) == 'I') {
+			uint16_t keyCount = pageNumKeys(pageBuf);
 			// Find first child that might have matches
-			collectRange(internalChild(buf, 0), prefix, out);
-			for (uint16_t i = 1; i <= n; ++i) {
-				collectRange(internalChild(buf, i), prefix, out);
+			collectRange(internalChild(pageBuf, 0), prefix, out);
+			for (uint16_t i = 1; i <= keyCount; ++i) {
+				collectRange(internalChild(pageBuf, i), prefix, out);
 			}
 			return;
 		}
@@ -243,13 +246,13 @@ namespace project_model {
 		while (currentId >= 0) {
 			std::vector<std::byte> leafPage(PAGE_SIZE);
 			readPage(currentId, leafPage);
-			auto* lbuf = leafPage.data();
-			uint16_t n = pageNumKeys(lbuf);
+			auto* leftPageBuf = leafPage.data();
+			uint16_t keyCount = pageNumKeys(leftPageBuf);
 
-			for (uint16_t i = 0; i < n; ++i) {
+			for (uint16_t i = 0; i < keyCount; ++i) {
 				std::string key;
 				BTreeLeafValue val;
-				leafGetEntry(lbuf, i, key, val);
+				leafGetEntry(leftPageBuf, i, key, val);
 
 				if (!started) {
 					if (key.substr(0, prefix.size()) < prefix) continue;
@@ -261,7 +264,7 @@ namespace project_model {
 				out.emplace_back(key, val);
 			}
 
-			currentId = pageNextLeaf(lbuf);
+			currentId = pageNextLeaf(leftPageBuf);
 		}
 	}
 
@@ -276,6 +279,7 @@ namespace project_model {
 			leafSetEntry(page.data(), 0, fkey, value);
 			pageNumKeys(page.data()) = 1;
 			writePage(fileHeader_.rootPageId, page);
+			fileHeader_.pageCount = 1;
 			fileHeader_.entryCount = 1;
 			saveHeader();
 			return true;
@@ -361,42 +365,42 @@ namespace project_model {
 		const BTreeLeafValue& value) {
 		std::vector<std::byte> page(PAGE_SIZE);
 		readPage(nodeId, page);
-		auto* buf = page.data();
+		auto* pageBuf = page.data();
 
-		if (pageType(buf) == 'L') {
+		if (pageType(pageBuf) == 'L') {
 			// Leaf: insert in sorted position
-			uint16_t n = pageNumKeys(buf);
-			int16_t pos = static_cast<int16_t>(n) - 1;
+			uint16_t keyCount = pageNumKeys(pageBuf);
+			int16_t pos = static_cast<int16_t>(keyCount) - 1;
 
 			while (pos >= 0) {
 				std::string existingKey;
 				BTreeLeafValue dummyVal;
-				leafGetEntry(buf, static_cast<size_t>(pos), existingKey, dummyVal);
+				leafGetEntry(pageBuf, static_cast<size_t>(pos), existingKey, dummyVal);
 				if (key >= existingKey) break;
 				pos--;
 			}
 			pos++; // insert at pos+1
 
 			// Shift entries right
-			for (uint16_t i = n; i > static_cast<uint16_t>(pos); --i) {
+			for (uint16_t i = keyCount; i > static_cast<uint16_t>(pos); --i) {
 				std::string srcKey;
 				BTreeLeafValue srcVal;
-				leafGetEntry(buf, i - 1, srcKey, srcVal);
-				leafSetEntry(buf, i, srcKey, srcVal);
+				leafGetEntry(pageBuf, i - 1, srcKey, srcVal);
+				leafSetEntry(pageBuf, i, srcKey, srcVal);
 			}
 
-			leafSetEntry(buf, static_cast<size_t>(pos), key, value);
-			pageNumKeys(buf) = n + 1;
+			leafSetEntry(pageBuf, static_cast<size_t>(pos), key, value);
+			pageNumKeys(pageBuf) = keyCount + 1;
 			writePage(nodeId, page);
 			return;
 		}
 
 		// Internal: find child to descend into
-		uint16_t n = pageNumKeys(buf);
+		uint16_t keyCount = pageNumKeys(pageBuf);
 		size_t childIdx = 0;
-		for (uint16_t i = 1; i <= n; ++i) {
-			auto* kp = internalKeyPtr(buf, i);
-			std::string sepKey = extractKey(kp);
+		for (uint16_t i = 1; i <= keyCount; ++i) {
+			auto* keyPtr = internalKeyPtr(pageBuf, i);
+			auto sepKey = extractKey(keyPtr);
 			if (key < sepKey) {
 				childIdx = static_cast<size_t>(i - 1);
 				goto descend_internal;
@@ -405,7 +409,7 @@ namespace project_model {
 		}
 		descend_internal:
 
-		int64_t childId = internalChild(buf, childIdx);
+		int64_t childId = internalChild(pageBuf, childIdx);
 
 		// Check if child is full
 		std::vector<std::byte> childPage(PAGE_SIZE);
@@ -418,18 +422,18 @@ namespace project_model {
 			splitChild(nodeId, childIdx, childId);
 			// After split, determine which child to descend into
 			readPage(nodeId, page);
-			buf = page.data();
-			n = pageNumKeys(buf);
+			pageBuf = page.data();
+			keyCount = pageNumKeys(pageBuf);
 			// Re-read the children
-			for (uint16_t i = 1; i <= n; ++i) {
-				auto* kp = internalKeyPtr(buf, i);
-				std::string sepKey = extractKey(kp);
+			for (uint16_t i = 1; i <= keyCount; ++i) {
+				auto* keyPtr = internalKeyPtr(pageBuf, i);
+				auto sepKey = extractKey(keyPtr);
 				if (key < sepKey) {
-					childId = internalChild(buf, static_cast<size_t>(i - 1));
+					childId = internalChild(pageBuf, static_cast<size_t>(i - 1));
 					goto descend_after_split;
 				}
 			}
-			childId = internalChild(buf, static_cast<size_t>(n));
+			childId = internalChild(pageBuf, static_cast<size_t>(keyCount));
 		}
 		descend_after_split:
 
@@ -447,24 +451,24 @@ namespace project_model {
 
 		bool isLeaf = (pageType(childBuf) == 'L');
 		int64_t newId = allocatePage(isLeaf ? 'L' : 'I');
-		std::vector<std::byte> newPage_buf(PAGE_SIZE);
-		std::memset(newPage_buf.data(), 0, PAGE_SIZE);
-		auto* newBuf = newPage_buf.data();
+		std::vector<std::byte> newPage_pageBuf(PAGE_SIZE);
+		std::memset(newPage_pageBuf.data(), 0, PAGE_SIZE);
+		auto* newBuf = newPage_pageBuf.data();
 
 		pageParent(newBuf) = parentId;
 		pageType(newBuf) = pageType(childBuf);
 
-		uint16_t n = pageNumKeys(childBuf);
+		uint16_t keyCount = pageNumKeys(childBuf);
 		uint16_t half = isLeaf ? LEAF_MAX / 2 : INTERNAL_MAX / 2;
-		uint16_t moved = n - half;
+		uint16_t moved = keyCount - half;
 
 		if (isLeaf) {
 			// Copy right half to new leaf
-			for (uint16_t i = half; i < n; ++i) {
-				std::string ek;
-				BTreeLeafValue ev;
-				leafGetEntry(childBuf, i, ek, ev);
-				leafSetEntry(newBuf, i - half, ek, ev);
+			for (uint16_t i = half; i < keyCount; ++i) {
+				std::string entryKey;
+				BTreeLeafValue entryValue;
+				leafGetEntry(childBuf, i, entryKey, entryValue);
+				leafSetEntry(newBuf, i - half, entryKey, entryValue);
 			}
 			pageNumKeys(newBuf) = moved;
 			pageNumKeys(childBuf) = half;
@@ -495,17 +499,17 @@ namespace project_model {
 			// Copy child pointer
 			internalChild(newBuf, 0) = internalChild(childBuf, half + 1);
 			// Copy keys and their children
-			for (uint16_t i = half + 1; i <= n; ++i) {
+			for (uint16_t i = half + 1; i <= keyCount; ++i) {
 				uint16_t newIdx = i - half - 1;
 				if (newIdx > 0)
 					std::memcpy(internalKeyPtr(newBuf, newIdx), internalKeyPtr(childBuf, i), KEY_SIZE);
 				internalChild(newBuf, newIdx + 1) = internalChild(childBuf, i + 1);
 			}
-			pageNumKeys(newBuf) = n - half - 1;
+			pageNumKeys(newBuf) = keyCount - half - 1;
 			pageNumKeys(childBuf) = half;
 
 			// The middle key goes up to parent
-			std::string splitKey = extractKey(internalKeyPtr(childBuf, half + 1));
+			auto splitKey = extractKey(internalKeyPtr(childBuf, half + 1));
 
 			uint16_t pn = pageNumKeys(parentBuf);
 			for (uint16_t i = pn; i > static_cast<uint16_t>(childIdx + 1); --i) {
@@ -519,7 +523,7 @@ namespace project_model {
 		}
 
 		writePage(childId, childPage);
-		writePage(newId, newPage_buf);
+		writePage(newId, newPage_pageBuf);
 		writePage(parentId, parentPage);
 	}
 
@@ -535,10 +539,10 @@ namespace project_model {
 			// If root has 0 keys, make its only child the new root
 			std::vector<std::byte> rootPage(PAGE_SIZE);
 			readPage(fileHeader_.rootPageId, rootPage);
-			auto* buf = rootPage.data();
-			if (pageType(buf) == 'I' && pageNumKeys(buf) == 0 && fileHeader_.pageCount > 1) {
-				fileHeader_.rootPageId = internalChild(buf, 0);
-				pageParent(buf) = -1;
+			auto* pageBuf = rootPage.data();
+			if (pageType(pageBuf) == 'I' && pageNumKeys(pageBuf) == 0 && fileHeader_.pageCount > 1) {
+				fileHeader_.rootPageId = internalChild(pageBuf, 0);
+				pageParent(pageBuf) = -1;
 			}
 
 			saveHeader();
@@ -550,23 +554,23 @@ namespace project_model {
 	bool BPlusTree::eraseFromNode(int64_t nodeId, const std::string& key) {
 		std::vector<std::byte> page(PAGE_SIZE);
 		readPage(nodeId, page);
-		auto* buf = page.data();
+		auto* pageBuf = page.data();
 
-		if (pageType(buf) == 'L') {
-			uint16_t n = pageNumKeys(buf);
-			for (uint16_t i = 0; i < n; ++i) {
-				std::string ek;
-				BTreeLeafValue ev;
-				leafGetEntry(buf, i, ek, ev);
-				if (ek == key) {
+		if (pageType(pageBuf) == 'L') {
+			uint16_t keyCount = pageNumKeys(pageBuf);
+			for (uint16_t i = 0; i < keyCount; ++i) {
+				std::string entryKey;
+				BTreeLeafValue entryValue;
+				leafGetEntry(pageBuf, i, entryKey, entryValue);
+				if (entryKey == key) {
 					// Shift left
-					for (uint16_t j = i; j + 1 < n; ++j) {
+					for (uint16_t j = i; j + 1 < keyCount; ++j) {
 						std::string sjKey;
 						BTreeLeafValue sjVal;
-						leafGetEntry(buf, j + 1, sjKey, sjVal);
-						leafSetEntry(buf, j, sjKey, sjVal);
+						leafGetEntry(pageBuf, j + 1, sjKey, sjVal);
+						leafSetEntry(pageBuf, j, sjKey, sjVal);
 					}
-					pageNumKeys(buf) = n - 1;
+					pageNumKeys(pageBuf) = keyCount - 1;
 					writePage(nodeId, page);
 					return true;
 				}
@@ -575,11 +579,11 @@ namespace project_model {
 		}
 
 		// Internal node
-		uint16_t n = pageNumKeys(buf);
+		uint16_t keyCount = pageNumKeys(pageBuf);
 		size_t childIdx = 0;
-		for (uint16_t i = 1; i <= n; ++i) {
-			auto* kp = internalKeyPtr(buf, i);
-			std::string sepKey = extractKey(kp);
+		for (uint16_t i = 1; i <= keyCount; ++i) {
+			auto* keyPtr = internalKeyPtr(pageBuf, i);
+			auto sepKey = extractKey(keyPtr);
 			if (key < sepKey) {
 				childIdx = static_cast<size_t>(i - 1);
 				goto erase_descend;
@@ -588,16 +592,16 @@ namespace project_model {
 		}
 		erase_descend:
 
-		int64_t childId = internalChild(buf, childIdx);
+		int64_t childId = internalChild(pageBuf, childIdx);
 		bool removed = eraseFromNode(childId, key);
 
 		if (removed) {
 			// Check if child is underfull
 			std::vector<std::byte> childPage(PAGE_SIZE);
 			readPage(childId, childPage);
-			auto* cbuf = childPage.data();
-			size_t minKeys = (pageType(cbuf) == 'L') ? LEAF_MIN : INTERNAL_MIN;
-			if (pageNumKeys(cbuf) < minKeys && nodeId != childId) {
+			auto* childPageBuf = childPage.data();
+			size_t minKeys = (pageType(childPageBuf) == 'L') ? LEAF_MIN : INTERNAL_MIN;
+			if (pageNumKeys(childPageBuf) < minKeys && nodeId != childId) {
 				borrowOrMerge(nodeId, childIdx);
 			}
 		}
@@ -608,58 +612,58 @@ namespace project_model {
 	void BPlusTree::borrowOrMerge(int64_t parentId, size_t idx) {
 		std::vector<std::byte> parentPage(PAGE_SIZE);
 		readPage(parentId, parentPage);
-		auto* pBuf = parentPage.data();
-		uint16_t pn = pageNumKeys(pBuf);
+		auto* parentBuf = parentPage.data();
+		uint16_t pn = pageNumKeys(parentBuf);
 
-		int64_t leftId = (idx > 0) ? internalChild(pBuf, idx - 1) : -1;
-		int64_t rightId = (idx + 1 <= pn) ? internalChild(pBuf, idx + 1) : -1;
-		int64_t childId = internalChild(pBuf, idx);
+		int64_t leftId = (idx > 0) ? internalChild(parentBuf, idx - 1) : -1;
+		int64_t rightId = (idx + 1 <= pn) ? internalChild(parentBuf, idx + 1) : -1;
+		int64_t childId = internalChild(parentBuf, idx);
 
 		std::vector<std::byte> childPage(PAGE_SIZE);
 		readPage(childId, childPage);
-		auto* cBuf = childPage.data();
-		bool isLeaf = (pageType(cBuf) == 'L');
+		auto* childBuf = childPage.data();
+		bool isLeaf = (pageType(childBuf) == 'L');
 
-		// Read left/right pages early so buffers are in scope for all paths
+		// Read left/right pages early so pageBuffers are in scope for all paths
 		std::vector<std::byte> leftPage(PAGE_SIZE);
 		std::vector<std::byte> rightPage(PAGE_SIZE);
-		auto* lBuf = (leftId >= 0) ? (readPage(leftId, leftPage), leftPage.data()) : nullptr;
-		auto* rBuf = (rightId >= 0) ? (readPage(rightId, rightPage), rightPage.data()) : nullptr;
+		auto* leftBuf = (leftId >= 0) ? (readPage(leftId, leftPage), leftPage.data()) : nullptr;
+		auto* rightBuf = (rightId >= 0) ? (readPage(rightId, rightPage), rightPage.data()) : nullptr;
 
 		// Try borrow from left sibling
-		if (leftId >= 0 && lBuf && pageNumKeys(lBuf) > (isLeaf ? LEAF_MIN : INTERNAL_MIN)) {
+		if (leftId >= 0 && leftBuf && pageNumKeys(leftBuf) > (isLeaf ? LEAF_MIN : INTERNAL_MIN)) {
 			if (isLeaf) {
 				std::string lastKey;
 				BTreeLeafValue lastVal;
-				leafGetEntry(lBuf, pageNumKeys(lBuf) - 1, lastKey, lastVal);
+				leafGetEntry(leftBuf, pageNumKeys(leftBuf) - 1, lastKey, lastVal);
 
 				std::string shiftKey;
 				BTreeLeafValue shiftVal;
-				for (uint16_t i = pageNumKeys(cBuf); i > 0; --i) {
-					leafGetEntry(cBuf, i - 1, shiftKey, shiftVal);
-					leafSetEntry(cBuf, i, shiftKey, shiftVal);
+				for (uint16_t i = pageNumKeys(childBuf); i > 0; --i) {
+					leafGetEntry(childBuf, i - 1, shiftKey, shiftVal);
+					leafSetEntry(childBuf, i, shiftKey, shiftVal);
 				}
-				leafSetEntry(cBuf, 0, lastKey, lastVal);
-				pageNumKeys(cBuf)++;
-				pageNumKeys(lBuf)--;
+				leafSetEntry(childBuf, 0, lastKey, lastVal);
+				pageNumKeys(childBuf)++;
+				pageNumKeys(leftBuf)--;
 				std::string newSep;
 				BTreeLeafValue newDummy;
-				leafGetEntry(cBuf, 0, newSep, newDummy);
-				std::memcpy(internalKeyPtr(pBuf, idx), newSep.data(),
+				leafGetEntry(childBuf, 0, newSep, newDummy);
+				std::memcpy(internalKeyPtr(parentBuf, idx), newSep.data(),
 					std::min(newSep.size(), KEY_SIZE - 1));
 			} else {
-				std::string parentKey = extractKey(internalKeyPtr(pBuf, idx));
-				for (uint16_t i = pageNumKeys(cBuf); i > 0; --i) {
-					internalChild(cBuf, i) = internalChild(cBuf, i - 1);
-					std::memcpy(internalKeyPtr(cBuf, i), internalKeyPtr(cBuf, i - 1), KEY_SIZE);
+				auto parentKey = extractKey(internalKeyPtr(parentBuf, idx));
+				for (uint16_t i = pageNumKeys(childBuf); i > 0; --i) {
+					internalChild(childBuf, i) = internalChild(childBuf, i - 1);
+					std::memcpy(internalKeyPtr(childBuf, i), internalKeyPtr(childBuf, i - 1), KEY_SIZE);
 				}
-				internalChild(cBuf, 0) = internalChild(lBuf, pageNumKeys(lBuf));
-				uint16_t lk = pageNumKeys(lBuf);
-				std::memcpy(internalKeyPtr(cBuf, 1), internalKeyPtr(pBuf, idx), KEY_SIZE);
-				std::memcpy(internalKeyPtr(pBuf, idx), internalKeyPtr(lBuf, lk), KEY_SIZE);
-				internalChild(cBuf, 1) = internalChild(lBuf, lk);
-				pageNumKeys(cBuf)++;
-				pageNumKeys(lBuf)--;
+				internalChild(childBuf, 0) = internalChild(leftBuf, pageNumKeys(leftBuf));
+				uint16_t lk = pageNumKeys(leftBuf);
+				std::memcpy(internalKeyPtr(childBuf, 1), internalKeyPtr(parentBuf, idx), KEY_SIZE);
+				std::memcpy(internalKeyPtr(parentBuf, idx), internalKeyPtr(leftBuf, lk), KEY_SIZE);
+				internalChild(childBuf, 1) = internalChild(leftBuf, lk);
+				pageNumKeys(childBuf)++;
+				pageNumKeys(leftBuf)--;
 			}
 			writePage(leftId, leftPage);
 			writePage(childId, childPage);
@@ -668,38 +672,38 @@ namespace project_model {
 		}
 
 		// Try borrow from right sibling
-		if (rightId >= 0 && rBuf && pageNumKeys(rBuf) > (isLeaf ? LEAF_MIN : INTERNAL_MIN)) {
+		if (rightId >= 0 && rightBuf && pageNumKeys(rightBuf) > (isLeaf ? LEAF_MIN : INTERNAL_MIN)) {
 			if (isLeaf) {
 				std::string firstKey;
 				BTreeLeafValue firstVal;
-				leafGetEntry(rBuf, 0, firstKey, firstVal);
-				uint16_t cn = pageNumKeys(cBuf);
-				leafSetEntry(cBuf, cn, firstKey, firstVal);
-				pageNumKeys(cBuf)++;
-				for (uint16_t i = 0; i + 1 < pageNumKeys(rBuf); ++i) {
-					std::string sk;
-					BTreeLeafValue sv;
-					leafGetEntry(rBuf, i + 1, sk, sv);
-					leafSetEntry(rBuf, i, sk, sv);
+				leafGetEntry(rightBuf, 0, firstKey, firstVal);
+				uint16_t cn = pageNumKeys(childBuf);
+				leafSetEntry(childBuf, cn, firstKey, firstVal);
+				pageNumKeys(childBuf)++;
+				for (uint16_t i = 0; i + 1 < pageNumKeys(rightBuf); ++i) {
+					std::string shiftKey;
+					BTreeLeafValue shiftValue;
+					leafGetEntry(rightBuf, i + 1, shiftKey, shiftValue);
+					leafSetEntry(rightBuf, i, shiftKey, shiftValue);
 				}
-				pageNumKeys(rBuf)--;
+				pageNumKeys(rightBuf)--;
 				std::string newSep;
 				BTreeLeafValue newDummy;
-				leafGetEntry(rBuf, 0, newSep, newDummy);
-				std::memcpy(internalKeyPtr(pBuf, idx + 1), newSep.data(),
+				leafGetEntry(rightBuf, 0, newSep, newDummy);
+				std::memcpy(internalKeyPtr(parentBuf, idx + 1), newSep.data(),
 					std::min(newSep.size(), KEY_SIZE - 1));
 			} else {
-				uint16_t cn = pageNumKeys(cBuf);
-				internalChild(cBuf, cn + 1) = internalChild(rBuf, 0);
-				std::memcpy(internalKeyPtr(cBuf, cn + 1), internalKeyPtr(pBuf, idx + 1), KEY_SIZE);
-				std::memcpy(internalKeyPtr(pBuf, idx + 1), internalKeyPtr(rBuf, 1), KEY_SIZE);
-				internalChild(rBuf, 0) = internalChild(rBuf, 1);
-				for (uint16_t i = 1; i < pageNumKeys(rBuf); ++i) {
-					std::memcpy(internalKeyPtr(rBuf, i), internalKeyPtr(rBuf, i + 1), KEY_SIZE);
-					internalChild(rBuf, i) = internalChild(rBuf, i + 1);
+				uint16_t cn = pageNumKeys(childBuf);
+				internalChild(childBuf, cn + 1) = internalChild(rightBuf, 0);
+				std::memcpy(internalKeyPtr(childBuf, cn + 1), internalKeyPtr(parentBuf, idx + 1), KEY_SIZE);
+				std::memcpy(internalKeyPtr(parentBuf, idx + 1), internalKeyPtr(rightBuf, 1), KEY_SIZE);
+				internalChild(rightBuf, 0) = internalChild(rightBuf, 1);
+				for (uint16_t i = 1; i < pageNumKeys(rightBuf); ++i) {
+					std::memcpy(internalKeyPtr(rightBuf, i), internalKeyPtr(rightBuf, i + 1), KEY_SIZE);
+					internalChild(rightBuf, i) = internalChild(rightBuf, i + 1);
 				}
-				pageNumKeys(cBuf)++;
-				pageNumKeys(rBuf)--;
+				pageNumKeys(childBuf)++;
+				pageNumKeys(rightBuf)--;
 			}
 			writePage(rightId, rightPage);
 			writePage(childId, childPage);
@@ -708,79 +712,79 @@ namespace project_model {
 		}
 
 		// Merge with a sibling
-		if (leftId >= 0 && lBuf) {
+		if (leftId >= 0 && leftBuf) {
 			if (isLeaf) {
-				uint16_t ln = pageNumKeys(lBuf);
-				uint16_t cn = pageNumKeys(cBuf);
+				uint16_t ln = pageNumKeys(leftBuf);
+				uint16_t cn = pageNumKeys(childBuf);
 				for (uint16_t i = 0; i < cn; ++i) {
-					std::string ek;
-					BTreeLeafValue ev;
-					leafGetEntry(cBuf, i, ek, ev);
-					leafSetEntry(lBuf, ln + i, ek, ev);
+					std::string entryKey;
+					BTreeLeafValue entryValue;
+					leafGetEntry(childBuf, i, entryKey, entryValue);
+					leafSetEntry(leftBuf, ln + i, entryKey, entryValue);
 				}
-				pageNumKeys(lBuf) = ln + cn;
-				pageNextLeaf(lBuf) = pageNextLeaf(cBuf);
+				pageNumKeys(leftBuf) = ln + cn;
+				pageNextLeaf(leftBuf) = pageNextLeaf(childBuf);
 				for (uint16_t i = static_cast<uint16_t>(idx); i < pn; ++i) {
-					std::memcpy(internalKeyPtr(pBuf, i), internalKeyPtr(pBuf, i + 1), KEY_SIZE);
-					internalChild(pBuf, i) = internalChild(pBuf, i + 1);
+					std::memcpy(internalKeyPtr(parentBuf, i), internalKeyPtr(parentBuf, i + 1), KEY_SIZE);
+					internalChild(parentBuf, i) = internalChild(parentBuf, i + 1);
 				}
-				pageNumKeys(pBuf) = pn - 1;
+				pageNumKeys(parentBuf) = pn - 1;
 			} else {
-				uint16_t ln = pageNumKeys(lBuf);
-				std::memcpy(internalKeyPtr(lBuf, ln + 1), internalKeyPtr(pBuf, idx), KEY_SIZE);
-				internalChild(lBuf, ln + 1) = internalChild(cBuf, 0);
-				uint16_t cn = pageNumKeys(cBuf);
+				uint16_t ln = pageNumKeys(leftBuf);
+				std::memcpy(internalKeyPtr(leftBuf, ln + 1), internalKeyPtr(parentBuf, idx), KEY_SIZE);
+				internalChild(leftBuf, ln + 1) = internalChild(childBuf, 0);
+				uint16_t cn = pageNumKeys(childBuf);
 				for (uint16_t i = 1; i <= cn; ++i) {
-					std::memcpy(internalKeyPtr(lBuf, ln + 1 + i), internalKeyPtr(cBuf, i), KEY_SIZE);
-					internalChild(lBuf, ln + 1 + i) = internalChild(cBuf, i);
+					std::memcpy(internalKeyPtr(leftBuf, ln + 1 + i), internalKeyPtr(childBuf, i), KEY_SIZE);
+					internalChild(leftBuf, ln + 1 + i) = internalChild(childBuf, i);
 				}
-				pageNumKeys(lBuf) = ln + 1 + cn;
+				pageNumKeys(leftBuf) = ln + 1 + cn;
 				for (uint16_t i = static_cast<uint16_t>(idx); i < pn; ++i) {
-					std::memcpy(internalKeyPtr(pBuf, i), internalKeyPtr(pBuf, i + 1), KEY_SIZE);
-					internalChild(pBuf, i) = internalChild(pBuf, i + 1);
+					std::memcpy(internalKeyPtr(parentBuf, i), internalKeyPtr(parentBuf, i + 1), KEY_SIZE);
+					internalChild(parentBuf, i) = internalChild(parentBuf, i + 1);
 				}
-				pageNumKeys(pBuf) = pn - 1;
+				pageNumKeys(parentBuf) = pn - 1;
 			}
 			writePage(leftId, leftPage);
 			writePage(parentId, parentPage);
-		} else if (rightId >= 0 && rBuf) {
+		} else if (rightId >= 0 && rightBuf) {
 			if (isLeaf) {
-				uint16_t cn = pageNumKeys(cBuf);
-				uint16_t rn = pageNumKeys(rBuf);
+				uint16_t cn = pageNumKeys(childBuf);
+				uint16_t rn = pageNumKeys(rightBuf);
 				for (uint16_t i = rn; i > 0; --i) {
-					std::string ek;
-					BTreeLeafValue ev;
-					leafGetEntry(rBuf, i - 1, ek, ev);
-					leafSetEntry(rBuf, cn + i - 1, ek, ev);
+					std::string entryKey;
+					BTreeLeafValue entryValue;
+					leafGetEntry(rightBuf, i - 1, entryKey, entryValue);
+					leafSetEntry(rightBuf, cn + i - 1, entryKey, entryValue);
 				}
 				for (uint16_t i = 0; i < cn; ++i) {
-					std::string ek;
-					BTreeLeafValue ev;
-					leafGetEntry(cBuf, i, ek, ev);
-					leafSetEntry(rBuf, i, ek, ev);
+					std::string entryKey;
+					BTreeLeafValue entryValue;
+					leafGetEntry(childBuf, i, entryKey, entryValue);
+					leafSetEntry(rightBuf, i, entryKey, entryValue);
 				}
-				pageNumKeys(rBuf) = cn + rn;
-				pagePrevLeaf(rBuf) = pagePrevLeaf(cBuf);
+				pageNumKeys(rightBuf) = cn + rn;
+				pagePrevLeaf(rightBuf) = pagePrevLeaf(childBuf);
 				for (uint16_t i = static_cast<uint16_t>(idx + 1); i < pn; ++i) {
-					std::memcpy(internalKeyPtr(pBuf, i), internalKeyPtr(pBuf, i + 1), KEY_SIZE);
-					internalChild(pBuf, i) = internalChild(pBuf, i + 1);
+					std::memcpy(internalKeyPtr(parentBuf, i), internalKeyPtr(parentBuf, i + 1), KEY_SIZE);
+					internalChild(parentBuf, i) = internalChild(parentBuf, i + 1);
 				}
-				pageNumKeys(pBuf) = pn - 1;
+				pageNumKeys(parentBuf) = pn - 1;
 			} else {
-				uint16_t cn = pageNumKeys(cBuf);
-				std::memcpy(internalKeyPtr(rBuf, cn + 1), internalKeyPtr(pBuf, idx + 1), KEY_SIZE);
-				internalChild(rBuf, cn + 1) = internalChild(rBuf, 0);
+				uint16_t cn = pageNumKeys(childBuf);
+				std::memcpy(internalKeyPtr(rightBuf, cn + 1), internalKeyPtr(parentBuf, idx + 1), KEY_SIZE);
+				internalChild(rightBuf, cn + 1) = internalChild(rightBuf, 0);
 				for (uint16_t i = 1; i <= cn; ++i) {
-					std::memcpy(internalKeyPtr(rBuf, cn + 1 + i), internalKeyPtr(cBuf, i), KEY_SIZE);
-					internalChild(rBuf, cn + 1 + i) = internalChild(cBuf, i);
+					std::memcpy(internalKeyPtr(rightBuf, cn + 1 + i), internalKeyPtr(childBuf, i), KEY_SIZE);
+					internalChild(rightBuf, cn + 1 + i) = internalChild(childBuf, i);
 				}
-				internalChild(rBuf, 0) = internalChild(cBuf, 0);
-				pageNumKeys(rBuf) = cn + 1 + pageNumKeys(rBuf);
+				internalChild(rightBuf, 0) = internalChild(childBuf, 0);
+				pageNumKeys(rightBuf) = cn + 1 + pageNumKeys(rightBuf);
 				for (uint16_t i = static_cast<uint16_t>(idx + 1); i < pn; ++i) {
-					std::memcpy(internalKeyPtr(pBuf, i), internalKeyPtr(pBuf, i + 1), KEY_SIZE);
-					internalChild(pBuf, i) = internalChild(pBuf, i + 1);
+					std::memcpy(internalKeyPtr(parentBuf, i), internalKeyPtr(parentBuf, i + 1), KEY_SIZE);
+					internalChild(parentBuf, i) = internalChild(parentBuf, i + 1);
 				}
-				pageNumKeys(pBuf) = pn - 1;
+				pageNumKeys(parentBuf) = pn - 1;
 			}
 			writePage(rightId, rightPage);
 			writePage(parentId, parentPage);

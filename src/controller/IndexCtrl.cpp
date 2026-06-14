@@ -5,11 +5,13 @@
 
 namespace project_controller {
 
+	// Sets the index file path and attempts to load existing data.
 	auto IndexCtrl::initialize(const std::string& idxPath) -> bool {
 		idxPath_ = idxPath;
 		return load() || true;
 	}
 
+	// DJB2 hash function for string keys.
 	auto IndexCtrl::djb2(const std::string& str) -> uint32_t {
 		uint32_t hash = 5381;
 		for (auto c : str)
@@ -17,19 +19,22 @@ namespace project_controller {
 		return hash;
 	}
 
+	// Converts string to lowercase for case-insensitive key matching.
 	auto IndexCtrl::normalize(const std::string& str) -> std::string {
-		std::string out = str;
+		auto out = str;
 		std::transform(out.begin(), out.end(), out.begin(),
 			[](unsigned char c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; });
 		return out;
 	}
 
+	// Inserts or updates a key-index pair into the map.
 	auto IndexCtrl::insert(const std::string& key, uint32_t chunkIndex, uint32_t recordIndex) -> bool {
 		IndexEntry entry{chunkIndex, recordIndex};
 		map_[normalize(key)] = entry;
 		return true;
 	}
 
+	// Looks up a key and returns its chunk/record indices if found.
 	auto IndexCtrl::lookup(const std::string& key) const -> std::optional<IndexValue> {
 		auto it = map_.find(normalize(key));
 		if (it != map_.end()) {
@@ -38,10 +43,12 @@ namespace project_controller {
 		return std::nullopt;
 	}
 
+	// Removes a key from the index. Returns true if the key existed.
 	auto IndexCtrl::remove(const std::string& key) -> bool {
 		return map_.erase(normalize(key)) > 0;
 	}
 
+	// Returns the next available ID by finding the max existing ID for the given prefix.
 	auto IndexCtrl::nextId(const std::string& prefix) const -> uint32_t {
 		uint32_t maxId = 0;
 		auto normPrefix = normalize(prefix);
@@ -57,10 +64,12 @@ namespace project_controller {
 		return maxId + 1;
 	}
 
+	// Clears the map — next save will write an empty index.
 	void IndexCtrl::rebuild() {
 		map_.clear();
 	}
 
+	// Serializes the index map to a binary file.
 	auto IndexCtrl::save() const -> bool {
 		using namespace project_utility;
 		std::ofstream f(idxPath_, std::ios::binary);
@@ -79,6 +88,7 @@ namespace project_controller {
 		return f.good();
 	}
 
+	// Deserializes the index map from a binary file.
 	auto IndexCtrl::load() -> bool {
 		using namespace project_utility;
 		std::ifstream f(idxPath_, std::ios::binary);
@@ -103,6 +113,7 @@ namespace project_controller {
 		return f.good();
 	}
 
+	// Resets the index to its initial empty state.
 	void IndexCtrl::clear() {
 		using namespace project_utility;
 		map_.clear();

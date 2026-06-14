@@ -1,14 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-project(TP_AEDSIII LANGUAGES CXX C)
+project(TPAEDSIII LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ======================
 # Build Speed Optimizations
 # ======================
-# Enable ccache for 80%+ faster rebuilds
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
 	message(STATUS "Using ccache for faster builds")
@@ -33,7 +32,7 @@ set(FETCHCONTENT_SOURCE_DIR_LUA ${LOCAL_LIBS_DIR}/lua)
 set(FETCHCONTENT_SOURCE_DIR_LUAAA ${LOCAL_LIBS_DIR}/luaaa)
 set(FETCHCONTENT_QUIET FALSE)
 
-# hello_imgui options (MUST be set BEFORE FetchContent_MakeAvailable)
+# hello_imgui options
 set(HELLOIMGUI_BUILD_AUTOMATION_TEST OFF)
 set(HELLOIMGUI_ADD_APP_WITH_INSTALL OFF)
 set(HELLOIMGUI_USE_FREETYPE OFF)
@@ -87,25 +86,39 @@ include(${HELLO_IMGUI_CMAKE_PATH}/hello_imgui_add_app.cmake)
 include(${HELLO_IMGUI_CMAKE_PATH}/hello_imgui_build_lib.cmake)
 
 # ======================
-# Cria diretorios de runtime
+# Runtime directories
 # ======================
 file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/data)
-file(MAKE_DIRECTORY ${CMAKE_SOURCE_DIR}/src/view/scripts/views)
 
-# Collect Lua scripts for IDE indexing (not compiled)
-file(GLOB LUA_SCRIPTS "${CMAKE_SOURCE_DIR}/src/view/scripts/views/*.lua")
-if(LUA_SCRIPTS)
-    source_group("Lua Scripts" FILES ${LUA_SCRIPTS})
+# ======================
+# Build output directory
+# ======================
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/builds/compiled_executable)
+
+# Copy assets/ to output directory at configure time
+if(EXISTS ${CMAKE_SOURCE_DIR}/assets)
+	file(COPY ${CMAKE_SOURCE_DIR}/assets/ DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets)
 endif()
 
 # ======================
-# Configuracao de build
+# Script packing tool
 # ======================
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/builds)
+add_executable(pack_scripts
+	${CMAKE_SOURCE_DIR}/tools/pack_scripts.cpp
+	${CMAKE_SOURCE_DIR}/src/view/ScriptArchive.cpp
+)
+target_include_directories(pack_scripts PRIVATE
+	${CMAKE_SOURCE_DIR}/src
+	${CMAKE_SOURCE_DIR}/libs/lua/src
+)
+target_link_libraries(pack_scripts PRIVATE liblua)
 
-# Fontes C++ (estrutura flat: utility/, model/, controller/, view/)
+# ======================
+# C++ sources (GUI app)
+# ======================
 set(APP_SOURCES
 	${CMAKE_SOURCE_DIR}/src/main.cpp
+	${CMAKE_SOURCE_DIR}/src/view/ScriptArchive.cpp
 	${CMAKE_SOURCE_DIR}/src/view/bindings/ImguiBindings.cpp
 	${CMAKE_SOURCE_DIR}/src/model/Record.cpp
 	${CMAKE_SOURCE_DIR}/src/model/BPlusTree.cpp
@@ -115,23 +128,36 @@ set(APP_SOURCES
 )
 
 # ======================
-# Aplicacao principal com GUI
+# Main application with GUI
 # ======================
-hello_imgui_add_app(TP_AEDSIII ${APP_SOURCES})
-target_include_directories(TP_AEDSIII PRIVATE
+hello_imgui_add_app(TPAEDSIII ${APP_SOURCES})
+	target_include_directories(TPAEDSIII PRIVATE
 	${CMAKE_SOURCE_DIR}/src
 	${CMAKE_SOURCE_DIR}/libs/luaaa
 	${CMAKE_SOURCE_DIR}/libs/lua/src
 	${CMAKE_SOURCE_DIR}/libs/hello_imgui/src
 )
-target_link_libraries(TP_AEDSIII PRIVATE
+target_link_libraries(TPAEDSIII PRIVATE
 	liblua
 	hello-imgui::hello_imgui
 	${PLATFORM_LIBS}
 )
 
 # ======================
-# Testes (CLI)
+# Rebuild scripts.bin every build (reflects current script files)
+# ======================
+# The custom target always runs, ensuring deleted .lua files are excluded
+add_custom_target(pack_scripts_always ALL
+	COMMAND $<TARGET_FILE:pack_scripts>
+		${CMAKE_SOURCE_DIR}/src/view/scripts
+		${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/scripts.bin
+	DEPENDS pack_scripts
+	COMMENT "Packing Lua scripts into ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/scripts.bin"
+)
+add_dependencies(TPAEDSIII pack_scripts_always)
+
+# ======================
+# Tests (CLI)
 # ======================
 set(TEST_SOURCES
 	${CMAKE_SOURCE_DIR}/tests/test_main.cpp
@@ -146,7 +172,7 @@ add_executable(run_tests ${TEST_SOURCES})
 target_include_directories(run_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 # ======================
-# Flags do compilador
+# Compiler flags
 # ======================
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 	add_compile_options(-Wall -Wextra -Wpedantic)
