@@ -241,7 +241,81 @@ function M.populate(dm)
 		print("Lucas > ED (2026-1): sem nota (repetente)")
 	end
 
-	print("=== Populacao de dados concluida! ===")
+	-- ============================================================
+	-- EXTRA: Mais matriculas
+	-- ============================================================
+
+	-- Joao repescando Logica (reprovou com 42 em 2025-2)
+	if s1 and lpOk then
+		dm:enrollStudent(1, 2, 1, "2026-2")
+		dm:updateGrade(1, 2, 68)
+		print("Joao > LP (2026-2): 68 (repescagem)")
+	end
+
+	-- Joao em Algoritmos Avancados (2026-2)
+	if s1 and aaOk then
+		dm:enrollStudent(1, 4, 2, "2026-2")
+		dm:updateGrade(1, 4, 88)
+		print("Joao > AA (2026-2): 88")
+	end
+
+	-- Maria em Banco de Dados (2026-2)
+	if s2 and bdOk then
+		dm:enrollStudent(2, 1, 1, "2026-2")
+		dm:updateGrade(2, 1, 92)
+		print("Maria > BD (2026-2): 92")
+	end
+
+	-- Maria em Calculo I (2026-2)
+	if s2 and cal1Ok then
+		dm:enrollStudent(2, 5, 3, "2026-2")
+		dm:updateGrade(2, 5, 87)
+		print("Maria > Calc I (2026-2): 87")
+	end
+
+	-- Pedro repescando ED (reprovou com 30 em 2024-2)
+	if s3 and edOk then
+		dm:enrollStudent(3, 3, 2, "2025-2")
+		dm:updateGrade(3, 3, 72)
+		print("Pedro > ED (2025-2): 72 (repescagem)")
+	end
+
+	-- Pedro em Algoritmos Avancados (2026-1)
+	if s3 and aaOk then
+		dm:enrollStudent(3, 4, 2, "2026-1")
+		dm:updateGrade(3, 4, 65)
+		print("Pedro > AA (2026-1): 65")
+	end
+
+	-- Ana em Logica de Programacao (2026-2)
+	if s4 and lpOk then
+		dm:enrollStudent(4, 2, 1, "2026-2")
+		dm:updateGrade(4, 2, 95)
+		print("Ana > LP (2026-2): 95")
+	end
+
+	-- Ana em Estruturas de Dados (2026-2)
+	if s4 and edOk then
+		dm:enrollStudent(4, 3, 2, "2026-2")
+		dm:updateGrade(4, 3, 78)
+		print("Ana > ED (2026-2): 78")
+	end
+
+	-- Lucas em Algoritmos Avancados (2026-2)
+	if s5 and aaOk then
+		dm:enrollStudent(5, 4, 2, "2026-2")
+		dm:updateGrade(5, 4, 58)
+		print("Lucas > AA (2026-2): 58")
+	end
+
+	-- Lucas em Algebra Linear (2026-2)
+	if s5 and algOk then
+		dm:enrollStudent(5, 6, 3, "2026-2")
+		dm:updateGrade(5, 6, 71)
+		print("Lucas > Alg Lin (2026-2): 71")
+	end
+
+	print("=== Populacao de dados concluida! (" .. tostring(#dm:getEnrollmentsByStudent(1) + #dm:getEnrollmentsByStudent(2) + #dm:getEnrollmentsByStudent(3) + #dm:getEnrollmentsByStudent(4) + #dm:getEnrollmentsByStudent(5)) .. " matriculas) ===")
 end
 
 return M

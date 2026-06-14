@@ -64,18 +64,24 @@ function M.render(studentId, readOnly)
 	imgui.Separator()
 	imgui.Spacing()
 
-	-- Mode tabs
+	-- Mode tabs with unique IDs to prevent collisions
+	imgui.PushID("tab_enroll")
 	if common.button("Matricular", common.COLORS.Green, 120, 25) then
 		mode = "enroll"
 	end
+	imgui.PopID()
 	imgui.SameLine()
+	imgui.PushID("tab_byStudent")
 	if common.button("Por Aluno", common.COLORS.Black, 120, 25) then
 		mode = "byStudent"
 	end
+	imgui.PopID()
 	imgui.SameLine()
+	imgui.PushID("tab_bySubject")
 	if common.button("Por Disciplina", common.COLORS.Black, 120, 25) then
 		mode = "bySubject"
 	end
+	imgui.PopID()
 
 	imgui.Spacing()
 	imgui.Separator()
@@ -110,6 +116,7 @@ function M.render(studentId, readOnly)
 		imgui.PopID()
 
 		imgui.Spacing()
+		imgui.PushID("action_enroll")
 		if common.button("Matricular", common.COLORS.Green, 150, 30) then
 			local sid = tonumber(enrollStuBuf)
 			local bid = tonumber(enrollSubBuf)
@@ -125,6 +132,7 @@ function M.render(studentId, readOnly)
 				common.errorPopup("IDs invalidos")
 			end
 		end
+		imgui.PopID()
 
 		imgui.Spacing()
 		imgui.Separator()
@@ -153,6 +161,7 @@ function M.render(studentId, readOnly)
 		imgui.PopID()
 
 		imgui.Spacing()
+		imgui.PushID("action_grade")
 		if common.button("Atualizar Nota", common.COLORS.Black, 150, 30) then
 			local sid = tonumber(gradeStuBuf)
 			local bid = tonumber(gradeSubBuf)
@@ -168,6 +177,7 @@ function M.render(studentId, readOnly)
 				common.errorPopup("Valores invalidos")
 			end
 		end
+		imgui.PopID()
 
 	elseif mode == "byStudent" then
 		imgui.Text("Matriculas por Aluno")
